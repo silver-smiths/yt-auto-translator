@@ -1,0 +1,22 @@
+🔴 [YT 자동번역] 오류 발생
+📌 액션: run_translation
+💬 메시지: OAuth2 request failed: Service responded with error: 'bad client id: 1055946215440-db158cpb5kdk0o2mdef76r9qpsi2m4l0.apps.googleusercontent.com'
+Error: OAuth2 request failed: Service responded with error: 'bad client id: 1055946215440-db158cpb5kdk0o2mdef76r9qpsi2m4l0.apps.googleusercontent.com'
+    at chrome-extension://kpnbngocofkplaegflgeflpmdbpikoij/src/lib/youtube-api.js:24:18
+🕐 2026. 4. 19. 오전 7:49:11
+
+
+🔴 [YT 자동번역] 오류 발생
+📌 액션: run_translation
+💬 메시지: OAuth2 request failed: Service responded with error: 'bad client id: 1055946215440-db158cpb5kdk0o2mdef76r9qpsi2m4l0.apps.googleusercontent.com'
+Error: OAuth2 request failed: Service responded with error: 'bad client id: 1055946215440-db158cpb5kdk0o2mdef76r9qpsi2m4l0.apps.googleusercontent.com'
+    at chrome-extension://kpnbngocofkplaegflgeflpmdbpikoij/src/lib/youtube-api.js:24:18
+🕐 2026. 4. 19. 오전 7:49:57
+
+
+🔴 [YT 자동번역] 오류 발생
+📌 액션: run_translation
+💬 메시지: OAuth2 request failed: Service responded with error: 'bad client id: 1055946215440-db158cpb5kdk0o2mdef76r9qpsi2m4l0.apps.googleusercontent.com'
+Error: OAuth2 request failed: Service responded with error: 'bad client id: 1055946215440-db158cpb5kdk0o2mdef76r9qpsi2m4l0.apps.googleusercontent.com'
+    at chrome-extension://kpnbngocofkplaegflgeflpmdbpikoij/src/lib/youtube-api.js:24:18
+🕐 2026. 4. 19. 오전 7:50:42

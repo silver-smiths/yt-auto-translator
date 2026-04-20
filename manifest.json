@@ -1,0 +1,68 @@
+{
+  "manifest_version": 3,
+  "name": "__MSG_extensionName__",
+  "description": "__MSG_extensionDescription__",
+  "version": "1.0.1",
+  "default_locale": "ko",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "identity",
+    "tabs"
+  ],
+  "host_permissions": [
+    "https://studio.youtube.com/*",
+    "https://www.googleapis.com/*",
+    "https://generativelanguage.googleapis.com/*",
+    "https://*.workers.dev/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://studio.youtube.com/*"
+      ],
+      "js": ["src/content/loader.js"],
+      "css": ["src/styles/content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "src/background/service-worker.js",
+    "type": "module"
+  },
+  "action": {
+    "default_popup": "src/popup/popup.html",
+    "default_icon": {
+      "16": "assets/icons/icon16.png",
+      "48": "assets/icons/icon48.png",
+      "128": "assets/icons/icon128.png"
+    }
+  },
+  "options_page": "src/options/options.html",
+  "icons": {
+    "16": "assets/icons/icon16.png",
+    "48": "assets/icons/icon48.png",
+    "128": "assets/icons/icon128.png"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "assets/*",
+        "src/styles/content.css",
+        "src/content/content-script.js",
+        "src/lib/constants.js",
+        "src/lib/logger.js"
+      ],
+      "matches": ["https://studio.youtube.com/*", "https://www.youtube.com/*"]
+    }
+  ],
+  "oauth2": {
+    "client_id": "1055946215440-db158cpb5kdk0o2mdef76r9qpsi2m4l0.apps.googleusercontent.com",
+    "scopes": [
+      "openid",
+      "https://www.googleapis.com/auth/userinfo.email",
+      "https://www.googleapis.com/auth/userinfo.profile",
+      "https://www.googleapis.com/auth/youtube.force-ssl"
+    ]
+  }
+}

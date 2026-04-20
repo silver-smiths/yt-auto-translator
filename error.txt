@@ -1,0 +1,851 @@
+[YT-Translator][ERROR] OAuth token request failed [object Object]
+컨텍스트
+src/lib/logger.js
+스택 추적
+src/lib/logger.js:46 (익명의 함수)
+
+/**
+ * Enhanced Logger - Errors and Activity Logging
+ */
+
+export const LOG_LEVEL = {
+  DEBUG: 'DEBUG',
+  INFO: 'INFO',
+  WARN: 'WARN',
+  ERROR: 'ERROR'
+};
+
+const MAX_LOG_ENTRIES = 200;
+let sentryInitialized = false;
+
+/**
+ * Sentry 초기화 (DSN이 설정된 경우에만)
+ */
+export async function initSentry(dsn) {
+  if (!dsn || sentryInitialized) return;
+  try {
+    sentryInitialized = true;
+    console.log('[YT-Translator] Sentry initialized');
+  } catch (e) {
+    console.error('[YT-Translator] Sentry init failed:', e);
+  }
+}
+
+/**
+ * 범용 로깅 함수
+ */
+export async function log(message, level = LOG_LEVEL.INFO, context = {}) {
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    level,
+    message: typeof message === 'string' ? message : JSON.stringify(message),
+    context: {
+      ...context,
+      url: context.url || (typeof window !== 'undefined' ? window.location.href : 'background'),
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'node/background',
+      version: chrome.runtime.getManifest().version
+    }
+  };
+
+  // 1. 콘솔 출력
+  const consoleMethod = level === LOG_LEVEL.ERROR ? 'error' : (level === LOG_LEVEL.WARN ? 'warn' : 'log');
+  console[consoleMethod](`[YT-Translator][${level}]`, message, context);
+
+  // 2. chrome.storage.local에 저장 (최근 MAX_LOG_ENTRIES개)
+  try {
+    const result = await chrome.storage.local.get('appLogs');
+    const logs = result.appLogs || [];
+    logs.unshift(logEntry);
+    if (logs.length > MAX_LOG_ENTRIES) logs.length = MAX_LOG_ENTRIES;
+    await chrome.storage.local.set({ appLogs: logs });
+  } catch (e) {
+    console.error('[YT-Translator] Failed to save log entry:', e);
+  }
+
+  // 3. Sentry로 전송 (ERROR 레벨만)
+  if (level === LOG_LEVEL.ERROR && sentryInitialized) {
+    await sendToSentry(logEntry);
+  }
+
+  return logEntry;
+}
+
+/**
+ * 에러 리포트 (편의를 위한 래퍼)
+ */
+export async function reportError(error, context = {}) {
+  return log(error.message || String(error), LOG_LEVEL.ERROR, {
+    stack: error.stack || '',
+    ...context
+  });
+}
+
+/**
+ * 로그 데이터 가져오기
+ */
+export async function getLogs() {
+  const result = await chrome.storage.local.get('appLogs');
+  return result.appLogs || [];
+}
+
+/**
+ * 로그 비우기
+ */
+export async function clearLogs() {
+  await chrome.storage.local.remove('appLogs');
+}
+
+/**
+ * Sentry에 에러 전송 (간이 HTTP 방식)
+ */
+async function sendToSentry(logEntry) {
+  try {
+    const result = await chrome.storage.local.get('settings');
+    const dsn = result.settings?.sentryDsn;
+    if (!dsn) return;
+
+    const dsnUrl = new URL(dsn);
+    const projectId = dsnUrl.pathname.replace('/', '');
+    const publicKey = dsnUrl.username;
+    const host = dsnUrl.host;
+
+    const envelope = JSON.stringify({
+      event_id: crypto.randomUUID().replace(/-/g, ''),
+      timestamp: logEntry.timestamp,
+      platform: 'javascript',
+      level: 'error',
+      message: { formatted: logEntry.message },
+      extra: logEntry.context,
+      tags: { source: 'yt-auto-translator' }
+    });
+
+    await fetch(`https://${host}/api/${projectId}/store/?sentry_key=${publicKey}&sentry_version=7`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: envelope
+    });
+  } catch (e) {
+    console.error('[YT-Translator] Sentry send failed:', e);
+  }
+}
+
+/**
+ * 글로벌 에러 핸들러 설치
+ */
+export function installGlobalErrorHandler(source = 'unknown') {
+  const handleError = (error, type) => {
+    reportError(error, {
+      source,
+      type,
+      url: typeof window !== 'undefined' ? window.location.href : 'background'
+    });
+  };
+
+  self.addEventListener('error', (event) => {
+    handleError(event.error || new Error(event.message), 'global_error');
+  });
+
+  self.addEventListener('unhandledrejection', (event) => {
+    handleError(event.reason || new Error('Unhandled Promise Rejection'), 'unhandled_rejection');
+  });
+}
+
+----------
+
+[YT-Translator][ERROR] Authorization page could not be loaded. [object Object]
+컨텍스트
+src/lib/logger.js
+스택 추적
+src/lib/logger.js:46 (익명의 함수)
+
+/**
+ * Enhanced Logger - Errors and Activity Logging
+ */
+
+export const LOG_LEVEL = {
+  DEBUG: 'DEBUG',
+  INFO: 'INFO',
+  WARN: 'WARN',
+  ERROR: 'ERROR'
+};
+
+const MAX_LOG_ENTRIES = 200;
+let sentryInitialized = false;
+
+/**
+ * Sentry 초기화 (DSN이 설정된 경우에만)
+ */
+export async function initSentry(dsn) {
+  if (!dsn || sentryInitialized) return;
+  try {
+    sentryInitialized = true;
+    console.log('[YT-Translator] Sentry initialized');
+  } catch (e) {
+    console.error('[YT-Translator] Sentry init failed:', e);
+  }
+}
+
+/**
+ * 범용 로깅 함수
+ */
+export async function log(message, level = LOG_LEVEL.INFO, context = {}) {
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    level,
+    message: typeof message === 'string' ? message : JSON.stringify(message),
+    context: {
+      ...context,
+      url: context.url || (typeof window !== 'undefined' ? window.location.href : 'background'),
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'node/background',
+      version: chrome.runtime.getManifest().version
+    }
+  };
+
+  // 1. 콘솔 출력
+  const consoleMethod = level === LOG_LEVEL.ERROR ? 'error' : (level === LOG_LEVEL.WARN ? 'warn' : 'log');
+  console[consoleMethod](`[YT-Translator][${level}]`, message, context);
+
+  // 2. chrome.storage.local에 저장 (최근 MAX_LOG_ENTRIES개)
+  try {
+    const result = await chrome.storage.local.get('appLogs');
+    const logs = result.appLogs || [];
+    logs.unshift(logEntry);
+    if (logs.length > MAX_LOG_ENTRIES) logs.length = MAX_LOG_ENTRIES;
+    await chrome.storage.local.set({ appLogs: logs });
+  } catch (e) {
+    console.error('[YT-Translator] Failed to save log entry:', e);
+  }
+
+  // 3. Sentry로 전송 (ERROR 레벨만)
+  if (level === LOG_LEVEL.ERROR && sentryInitialized) {
+    await sendToSentry(logEntry);
+  }
+
+  return logEntry;
+}
+
+/**
+ * 에러 리포트 (편의를 위한 래퍼)
+ */
+export async function reportError(error, context = {}) {
+  return log(error.message || String(error), LOG_LEVEL.ERROR, {
+    stack: error.stack || '',
+    ...context
+  });
+}
+
+/**
+ * 로그 데이터 가져오기
+ */
+export async function getLogs() {
+  const result = await chrome.storage.local.get('appLogs');
+  return result.appLogs || [];
+}
+
+/**
+ * 로그 비우기
+ */
+export async function clearLogs() {
+  await chrome.storage.local.remove('appLogs');
+}
+
+/**
+ * Sentry에 에러 전송 (간이 HTTP 방식)
+ */
+async function sendToSentry(logEntry) {
+  try {
+    const result = await chrome.storage.local.get('settings');
+    const dsn = result.settings?.sentryDsn;
+    if (!dsn) return;
+
+    const dsnUrl = new URL(dsn);
+    const projectId = dsnUrl.pathname.replace('/', '');
+    const publicKey = dsnUrl.username;
+    const host = dsnUrl.host;
+
+    const envelope = JSON.stringify({
+      event_id: crypto.randomUUID().replace(/-/g, ''),
+      timestamp: logEntry.timestamp,
+      platform: 'javascript',
+      level: 'error',
+      message: { formatted: logEntry.message },
+      extra: logEntry.context,
+      tags: { source: 'yt-auto-translator' }
+    });
+
+    await fetch(`https://${host}/api/${projectId}/store/?sentry_key=${publicKey}&sentry_version=7`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: envelope
+    });
+  } catch (e) {
+    console.error('[YT-Translator] Sentry send failed:', e);
+  }
+}
+
+/**
+ * 글로벌 에러 핸들러 설치
+ */
+export function installGlobalErrorHandler(source = 'unknown') {
+  const handleError = (error, type) => {
+    reportError(error, {
+      source,
+      type,
+      url: typeof window !== 'undefined' ? window.location.href : 'background'
+    });
+  };
+
+  self.addEventListener('error', (event) => {
+    handleError(event.error || new Error(event.message), 'global_error');
+  });
+
+  self.addEventListener('unhandledrejection', (event) => {
+    handleError(event.reason || new Error('Unhandled Promise Rejection'), 'unhandled_rejection');
+  });
+}
+
+------------
+
+[YT-Translator][Chunk 1] Error: Error: Gemini API 권한 오류 (403): API가 활성화되지 않았거나 OAuth 스코프가 부족합니다. GCP 콘솔에서 'Generative Language API'를 활성화했는지 확인해 주세요. 상세: Request had insufficient authentication scopes.
+컨텍스트
+src/lib/llm-api.js
+스택 추적
+src/lib/llm-api.js:166 (익명의 함수)
+
+/**
+ * LLM API 연동 모듈 - Google Gemini, OpenAI, Anthropic Claude 지원
+ */
+import { API_PROVIDERS, TRANSLATION_PROMPT } from './constants.js';
+import { reportError, log, LOG_LEVEL } from './logger.js';
+
+/**
+ * 번역 요청 전송 (ID 기반 매핑 + 청크 분할 지원)
+ */
+export async function translateSubtitles({ provider, apiKey, useGeminiOAuth, model, sourceLang, targetLang, subtitles, token }) {
+  const CHUNK_SIZE = 100; // 한 번에 보낼 자막 수 (성능/한도 최적화)
+  const results = new Array(subtitles.length);
+  
+  // 자막에 순번(ID) 및 지속시간 정보 추가
+  const enhancedSubtitles = subtitles.map((s, i) => {
+    // 타임코드 파싱 (00:00:00,000 --> 00:00:00,000)
+    let duration = "2.0";
+    if (s.startTime && s.endTime) {
+      const start = parseTime(s.startTime);
+      const end = parseTime(s.endTime);
+      duration = (end - start).toFixed(1);
+    }
+    return { ...s, id: i + 1, duration };
+  });
+
+  // 청크 단위로 나누어 처리
+  for (let i = 0; i < enhancedSubtitles.length; i += CHUNK_SIZE) {
+    const chunk = enhancedSubtitles.slice(i, i + CHUNK_SIZE);
+    
+    const subtitleTexts = chunk
+      .map(s => `[${s.id}] ${s.text}`)
+      .join('\n');
+
+    const prompt = TRANSLATION_PROMPT
+      .replaceAll('{sourceLang}', sourceLang)
+      .replaceAll('{targetLang}', targetLang)
+      .replaceAll('{subtitles}', subtitleTexts);
+
+    let translatedChunkText;
+    try {
+      if (provider === 'google' && useGeminiOAuth && !token) {
+        throw new Error('Gemini OAuth 토큰이 없습니다. 먼저 인증을 진행해 주세요.');
+      }
+
+    log(`Calling ${provider} for chunk translation`, LOG_LEVEL.DEBUG, { model, targetLang });
+    switch (provider) {
+      case 'google':
+        translatedChunkText = await callGemini(apiKey, model, prompt, targetLang, token);
+        break;
+      case 'openai':
+        translatedChunkText = await callOpenAI(apiKey, model, prompt, targetLang);
+        break;
+      case 'anthropic':
+        translatedChunkText = await callAnthropic(apiKey, model, prompt, targetLang);
+        break;
+      default:
+        throw new Error(`Unsupported provider: ${provider}`);
+    }
+    log(`${provider} response received`, LOG_LEVEL.DEBUG, { 
+      length: translatedChunkText.length,
+      preview: translatedChunkText.substring(0, 100).replace(/\n/g, ' ') 
+    });
+
+    // 1. Markdown 코드 블록 및 서술어 제거 시도
+    let cleanText = translatedChunkText
+      .replace(/```[a-z]*\n?([\s\S]*?)```/g, '$1') // 코드 블록 제거
+      .trim();
+
+    // 서술어(preamble) 제거: [ID] 또는 ID. 으로 시작하지 않는 앞부분 라인들 제거
+    const cleanLines = cleanText.split('\n');
+    const firstIdIdx = cleanLines.findIndex(line => {
+      const trimmed = line.trim();
+      // 지원 포맷: [1], 1., 1:, 1-, 1), ID 1:, 1 Text, **1.**, #1
+      return /^\[\d+\]/.test(trimmed) || 
+             /^\d+[\s.:-]+\s+/.test(trimmed) || 
+             /^\d+\)\s+/.test(trimmed) ||
+             /^ID\s*\d+/i.test(trimmed) ||
+             /^\**\d+\.\**/i.test(trimmed) ||
+             /^#\d+/i.test(trimmed);
+    });
+    
+    if (firstIdIdx > 0) {
+      log(`Stripping ${firstIdIdx} lines of preamble`, LOG_LEVEL.DEBUG);
+      cleanText = cleanLines.slice(firstIdIdx).join('\n').trim();
+    }
+
+    // 2. 결과 파싱 및 매핑
+    const parsedLinesMap = parseTranslatedLines(cleanText);
+    
+    let matchCount = 0;
+    let untranslatedCount = 0;
+    
+    // 비교를 위해 텍스트 정규화 (모든 구두점 및 공백 제거)
+    const normalizeForComp = (text) => text?.trim().toLowerCase()
+      .replace(/[.,!?;:()[\]{}"'\\/|<>@#$%^&*+=\-_~`]/g, '')
+      .replace(/\s+/g, '') || '';
+
+    chunk.forEach((original, idx) => {
+      const translated = parsedLinesMap.get(original.id);
+      if (translated) {
+        matchCount++;
+        
+        // 번역 여부 체크 (원본과 동일한지)
+        const normOrig = normalizeForComp(original.text);
+        const normTrans = normalizeForComp(translated);
+        
+        // 원본과 동일한 경우 (단, 아주 짧거나 숫자인 경우는 예외로 볼 수 있음)
+        if (normOrig === normTrans && original.text.trim().length > 1) {
+          untranslatedCount++;
+        }
+        results[i + idx] = { ...original, text: translated };
+      } else {
+        results[i + idx] = null;
+      }
+    });
+
+    log(`Chunk ${i / CHUNK_SIZE + 1}: ${matchCount}/${chunk.length} matched, ${untranslatedCount} echoes`, LOG_LEVEL.DEBUG);
+
+    // 3. 폴백: ID 매칭 실패가 있지만 줄 수가 일치하는 경우 순서대로 매핑
+    if (matchCount < chunk.length) {
+      log(`Parsing match failed (${matchCount}/${chunk.length}). Attempting sequential fallback...`, LOG_LEVEL.WARN);
+      
+      const rawLines = cleanText.split('\n')
+        .map(l => l.replace(/^\[?\d+\]?[\s.:-]*\s*/, '').trim())
+        .filter(l => l.length > 0);
+
+      if (rawLines.length === chunk.length) {
+        log(`Sequential mapping successful for chunk ${i / CHUNK_SIZE + 1}`, LOG_LEVEL.INFO);
+        let fallbackUntranslated = 0;
+        chunk.forEach((original, idx) => {
+          const translated = rawLines[idx];
+          const normOrig = normalizeForComp(original.text);
+          const normTrans = normalizeForComp(translated);
+          
+          if (normOrig === normTrans && original.text.trim().length > 1) {
+            fallbackUntranslated++;
+          }
+          results[i + idx] = { ...original, text: translated };
+        });
+        matchCount = chunk.length;
+        untranslatedCount = fallbackUntranslated;
+      } else {
+        log(`Sequential fallback failed: rawLines(${rawLines.length}) != chunk(${chunk.length})`, LOG_LEVEL.WARN);
+        // 폴백도 안되면 원본으로 채움 (기존 매핑 결과 유지)
+        chunk.forEach((original, idx) => {
+          if (!results[i + idx]) {
+            results[i + idx] = { ...original };
+          }
+        });
+      }
+    }
+
+    // 치명적 실패 체크 (번역 거부 또는 에코 현상)
+    const untranslatedRate = untranslatedCount / chunk.length;
+    const matchRate = matchCount / chunk.length;
+
+    if (matchRate < 0.2 || (untranslatedRate > 0.5 && chunk.length > 2)) {
+      if (untranslatedRate > 0.5) {
+        log(`Critical Echo detected: ${untranslatedCount}/${chunk.length}`, LOG_LEVEL.ERROR);
+        throw new Error(`AI가 번역을 거부하고 원문을 그대로 반환했습니다 (${(untranslatedRate * 100).toFixed(0)}% 일치). 프롬프트를 조정하거나 나중에 다시 시도해 주세요.`);
+      }
+      throw new Error(`번역 결과 파싱에 실패했습니다 (매칭률 ${(matchRate * 100).toFixed(0)}%). AI가 형식을 지키지 않았을 수 있습니다.`);
+    }
+
+    } catch (error) {
+      console.error(`[YT-Translator][Chunk ${i / CHUNK_SIZE + 1}] Error:`, error);
+      
+      // 인증 오류(401) 또는 권한 오류(403) 등 API 호출 자체의 오류인 경우 상위로 전파
+      if (error.message.includes('401') || error.message.includes('TOKEN_EXPIRED')) {
+        throw new Error('TOKEN_EXPIRED');
+      }
+      
+      // 파싱 실패나 모델 차단 등도 상위로 전파하여 "원본 그대로 업로드"되는 것을 방지
+      throw error;
+    }
+
+    // 전역 API 제한(Rate Limit) 방지를 위한 짧은 휴식 (필요 시)
+    if (i + CHUNK_SIZE < enhancedSubtitles.length) {
+      await new Promise(r => setTimeout(r, 1000));
+    }
+  }
+
+  return results;
+}
+
+/**
+ * [ID] Text 형식 파싱
+ */
+function parseTranslatedLines(text) {
+  const map = new Map();
+  const lines = text.split('\n');
+  
+  // 지원하는 정규식 목록 (유연성 강화)
+  const regexes = [
+    /^\[(\d+)\][\s.:-]*\s*(.*)$/,             // [1] Text
+    /^\**(\d+)\.\**[\s.:-]*\s*(.*)$/,        // 1. Text, **1.** Text
+    /^(\d+)[\s.:-]+\s*(.*)$/,                 // 1: Text, 1- Text
+    /^(\d+)\)\s*(.*)$/,                       // 1) Text
+    /^ID\s*(\d+)[\s.:-]*\s*(.*)$/i,            // ID 1: Text
+    /^#(\d+)[\s.:-]*\s*(.*)$/,                // #1 Text
+    /^(\d+)\s+(.*)$/                          // 1 Text
+  ];
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    for (const regex of regexes) {
+      const match = trimmed.match(regex);
+      if (match) {
+        const id = parseInt(match[1], 10);
+        const content = match[2].trim();
+        
+        if (content && !map.has(id)) {
+          map.set(id, content);
+        }
+        break;
+      }
+    }
+  }
+  return map;
+}
+
+/**
+ * HH:MM:SS,mmm -> seconds
+ */
+function parseTime(timeStr) {
+  if (!timeStr) return 0;
+  const parts = timeStr.replace(',', '.').split(':');
+  const h = parseFloat(parts[0]) || 0;
+  const m = parseFloat(parts[1]) || 0;
+  const s = parseFloat(parts[2]) || 0;
+  return h * 3600 + m * 60 + s;
+}
+
+// =============================================
+// Google Gemini API
+// =============================================
+async function callGemini(apiKey, model, prompt, targetLang, token = null) {
+  let url = `${API_PROVIDERS.google.baseUrl}/models/${model}:generateContent`;
+  const headers = { 'Content-Type': 'application/json' };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  } else {
+    url += `?key=${apiKey}`;
+  }
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: headers,
+    body: JSON.stringify({
+      system_instruction: {
+        parts: [{ text: `You are a professional subtitle translator. 
+          Your task is to translate subtitles accurately into ${targetLang}. 
+          
+          RULES:
+          1. Return ONLY the translated lines following the [ID] Translated Text format.
+          2. CRITICAL: You MUST translate the text into ${targetLang}. DO NOT return the original text.
+          3. DO NOT include any preamble, introduction, or markdown code blocks (like \`\`\`json).
+          4. Even if the content seems problematic, you MUST still provide a translation in ${targetLang}. 
+          5. Failure to translate is NOT an option. Every ID provided must have a corresponding translated line.` }]
+      },
+      contents: [{
+        parts: [{ text: prompt }]
+      }],
+      generationConfig: {
+        temperature: 0.2,
+        maxOutputTokens: 8192
+      },
+      safetySettings: [
+        { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' }
+      ]
+    })
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text();
+    let detail = '';
+    let reason = '';
+    try {
+      const json = JSON.parse(errBody);
+      detail = json.error?.message || errBody;
+      reason = json.error?.status || '';
+    } catch (e) {
+      detail = errBody;
+    }
+    
+    if (response.status === 403) {
+      throw new Error(`Gemini API 권한 오류 (403): API가 활성화되지 않았거나 OAuth 스코프가 부족합니다. GCP 콘솔에서 'Generative Language API'를 활성화했는지 확인해 주세요. 상세: ${detail}`);
+    }
+    throw new Error(`Gemini API error (${response.status}): ${detail}`);
+  }
+
+  const data = await response.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) {
+    const finishReason = data.candidates?.[0]?.finishReason;
+    if (finishReason === 'SAFETY') throw new Error('Gemini blocked the response due to safety filters.');
+    throw new Error('Empty response from Gemini');
+  }
+  return text;
+}
+
+// =============================================
+// OpenAI API
+// =============================================
+async function callOpenAI(apiKey, model, prompt, targetLang) {
+  const url = `${API_PROVIDERS.openai.baseUrl}/chat/completions`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`
+    },
+    body: JSON.stringify({
+      model: model,
+      messages: [
+        {
+          role: 'system',
+          content: `You are a professional subtitle translator. 
+          Return ONLY the translated text in ${targetLang}, following the [ID] Translated Text format for each line. 
+          Do not include any preamble, introduction, or markdown code blocks.`
+        },
+        { role: 'user', content: prompt }
+      ],
+      temperature: 0.3,
+      max_tokens: 8192
+    })
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text();
+    throw new Error(`OpenAI API error (${response.status}): ${errBody}`);
+  }
+
+  const data = await response.json();
+  const text = data.choices?.[0]?.message?.content;
+  if (!text) throw new Error('Empty response from OpenAI');
+  return text;
+}
+
+// =============================================
+// Anthropic Claude API
+// =============================================
+async function callAnthropic(apiKey, model, prompt, targetLang) {
+  const url = `${API_PROVIDERS.anthropic.baseUrl}/messages`;
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true'
+    },
+    body: JSON.stringify({
+      model: model,
+      max_tokens: 8192,
+      messages: [
+        { role: 'user', content: prompt }
+      ],
+      system: `You are a professional subtitle translator. 
+      Return ONLY the translated text in ${targetLang}, following the [ID] Translated Text format for each line. 
+      Do not include any preamble, introduction, or markdown code blocks.`,
+      temperature: 0.3
+    })
+  });
+
+  if (!response.ok) {
+    const errBody = await response.text();
+    throw new Error(`Anthropic API error (${response.status}): ${errBody}`);
+  }
+
+  const data = await response.json();
+  const text = data.content?.[0]?.text;
+  if (!text) throw new Error('Empty response from Anthropic');
+  return text;
+}
+
+------------
+
+[YT-Translator][ERROR] Gemini API 권한 오류 (403): API가 활성화되지 않았거나 OAuth 스코프가 부족합니다. GCP 콘솔에서 'Generative Language API'를 활성화했는지 확인해 주세요. 상세: Request had insufficient authentication scopes. [object Object]
+컨텍스트
+src/lib/logger.js
+스택 추적
+src/lib/logger.js:46 (익명의 함수)
+
+/**
+ * Enhanced Logger - Errors and Activity Logging
+ */
+
+export const LOG_LEVEL = {
+  DEBUG: 'DEBUG',
+  INFO: 'INFO',
+  WARN: 'WARN',
+  ERROR: 'ERROR'
+};
+
+const MAX_LOG_ENTRIES = 200;
+let sentryInitialized = false;
+
+/**
+ * Sentry 초기화 (DSN이 설정된 경우에만)
+ */
+export async function initSentry(dsn) {
+  if (!dsn || sentryInitialized) return;
+  try {
+    sentryInitialized = true;
+    console.log('[YT-Translator] Sentry initialized');
+  } catch (e) {
+    console.error('[YT-Translator] Sentry init failed:', e);
+  }
+}
+
+/**
+ * 범용 로깅 함수
+ */
+export async function log(message, level = LOG_LEVEL.INFO, context = {}) {
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    level,
+    message: typeof message === 'string' ? message : JSON.stringify(message),
+    context: {
+      ...context,
+      url: context.url || (typeof window !== 'undefined' ? window.location.href : 'background'),
+      userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : 'node/background',
+      version: chrome.runtime.getManifest().version
+    }
+  };
+
+  // 1. 콘솔 출력
+  const consoleMethod = level === LOG_LEVEL.ERROR ? 'error' : (level === LOG_LEVEL.WARN ? 'warn' : 'log');
+  console[consoleMethod](`[YT-Translator][${level}]`, message, context);
+
+  // 2. chrome.storage.local에 저장 (최근 MAX_LOG_ENTRIES개)
+  try {
+    const result = await chrome.storage.local.get('appLogs');
+    const logs = result.appLogs || [];
+    logs.unshift(logEntry);
+    if (logs.length > MAX_LOG_ENTRIES) logs.length = MAX_LOG_ENTRIES;
+    await chrome.storage.local.set({ appLogs: logs });
+  } catch (e) {
+    console.error('[YT-Translator] Failed to save log entry:', e);
+  }
+
+  // 3. Sentry로 전송 (ERROR 레벨만)
+  if (level === LOG_LEVEL.ERROR && sentryInitialized) {
+    await sendToSentry(logEntry);
+  }
+
+  return logEntry;
+}
+
+/**
+ * 에러 리포트 (편의를 위한 래퍼)
+ */
+export async function reportError(error, context = {}) {
+  return log(error.message || String(error), LOG_LEVEL.ERROR, {
+    stack: error.stack || '',
+    ...context
+  });
+}
+
+/**
+ * 로그 데이터 가져오기
+ */
+export async function getLogs() {
+  const result = await chrome.storage.local.get('appLogs');
+  return result.appLogs || [];
+}
+
+/**
+ * 로그 비우기
+ */
+export async function clearLogs() {
+  await chrome.storage.local.remove('appLogs');
+}
+
+/**
+ * Sentry에 에러 전송 (간이 HTTP 방식)
+ */
+async function sendToSentry(logEntry) {
+  try {
+    const result = await chrome.storage.local.get('settings');
+    const dsn = result.settings?.sentryDsn;
+    if (!dsn) return;
+
+    const dsnUrl = new URL(dsn);
+    const projectId = dsnUrl.pathname.replace('/', '');
+    const publicKey = dsnUrl.username;
+    const host = dsnUrl.host;
+
+    const envelope = JSON.stringify({
+      event_id: crypto.randomUUID().replace(/-/g, ''),
+      timestamp: logEntry.timestamp,
+      platform: 'javascript',
+      level: 'error',
+      message: { formatted: logEntry.message },
+      extra: logEntry.context,
+      tags: { source: 'yt-auto-translator' }
+    });
+
+    await fetch(`https://${host}/api/${projectId}/store/?sentry_key=${publicKey}&sentry_version=7`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: envelope
+    });
+  } catch (e) {
+    console.error('[YT-Translator] Sentry send failed:', e);
+  }
+}
+
+/**
+ * 글로벌 에러 핸들러 설치
+ */
+export function installGlobalErrorHandler(source = 'unknown') {
+  const handleError = (error, type) => {
+    reportError(error, {
+      source,
+      type,
+      url: typeof window !== 'undefined' ? window.location.href : 'background'
+    });
+  };
+
+  self.addEventListener('error', (event) => {
+    handleError(event.error || new Error(event.message), 'global_error');
+  });
+
+  self.addEventListener('unhandledrejection', (event) => {
+    handleError(event.reason || new Error('Unhandled Promise Rejection'), 'unhandled_rejection');
+  });
+}

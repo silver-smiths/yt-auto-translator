@@ -1,0 +1,9 @@
+name = "yt-auto-translator-logger"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# 환경변수는 Cloudflare Dashboard에서 직접 설정 (코드에 노출 금지)
+# Dashboard > Workers > yt-auto-translator-logger > Settings > Variables
+# - TELEGRAM_BOT_TOKEN
+# - TELEGRAM_CHAT_ID
+# - LOG_SECRET

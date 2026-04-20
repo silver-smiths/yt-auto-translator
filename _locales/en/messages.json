@@ -1,0 +1,205 @@
+{
+  "extensionName": {
+    "message": "YouTube Auto Translator",
+    "description": "Extension name"
+  },
+  "extensionDescription": {
+    "message": "Automatically translate and register YouTube Studio video subtitles into 26 languages.",
+    "description": "Extension description"
+  },
+  "popupTitle": {
+    "message": "YouTube Auto Translator",
+    "description": "Popup title"
+  },
+  "btnStartTranslation": {
+    "message": "Start Translation",
+    "description": "Start translation button"
+  },
+  "btnStopTranslation": {
+    "message": "Stop Translation",
+    "description": "Stop translation button"
+  },
+  "btnOpenSettings": {
+    "message": "Settings",
+    "description": "Settings button"
+  },
+  "statusIdle": {
+    "message": "Ready",
+    "description": "Idle status"
+  },
+  "statusExtracting": {
+    "message": "Extracting subtitles...",
+    "description": "Extracting status"
+  },
+  "statusTranslating": {
+    "message": "Translating... ($LANG$ - $CURRENT$/$TOTAL$)",
+    "description": "Translating status",
+    "placeholders": {
+      "lang": { "content": "$1", "example": "English" },
+      "current": { "content": "$2", "example": "3" },
+      "total": { "content": "$3", "example": "26" }
+    }
+  },
+  "statusUploading": {
+    "message": "Uploading subtitles... ($LANG$)",
+    "description": "Uploading status",
+    "placeholders": {
+      "lang": { "content": "$1", "example": "English" }
+    }
+  },
+  "statusComplete": {
+    "message": "Complete! $COUNT$ languages translated successfully",
+    "description": "Complete status",
+    "placeholders": {
+      "count": { "content": "$1", "example": "26" }
+    }
+  },
+  "statusError": {
+    "message": "Error: $MESSAGE$",
+    "description": "Error status",
+    "placeholders": {
+      "message": { "content": "$1", "example": "API key not found" }
+    }
+  },
+  "errorNoApiKey": {
+    "message": "API Key is not set. Please enter your API Key in the Settings page.",
+    "description": "No API key error"
+  },
+  "errorNotYoutubeStudio": {
+    "message": "This extension only works on YouTube Studio video edit pages.",
+    "description": "Not YouTube Studio error"
+  },
+  "errorNoSubtitles": {
+    "message": "No subtitles found to extract.",
+    "description": "No subtitles error"
+  },
+  "optionsTitle": {
+    "message": "YouTube Auto Translator Settings",
+    "description": "Options page title"
+  },
+  "optionsApiProvider": {
+    "message": "LLM API Provider",
+    "description": "API provider select label"
+  },
+  "optionsApiKey": {
+    "message": "API Key",
+    "description": "API key input label"
+  },
+  "optionsApiKeyPlaceholder": {
+    "message": "Enter your API Key",
+    "description": "API key placeholder"
+  },
+  "optionsUseGeminiOAuth": {
+    "message": "Use Google Account (OAuth) for Gemini",
+    "description": "Option to use Google OAuth for Gemini API"
+  },
+  "optionsModel": {
+    "message": "Model",
+    "description": "Model select label"
+  },
+  "optionsSourceLang": {
+    "message": "Source Language",
+    "description": "Source language label"
+  },
+  "optionsSourceLangAuto": {
+    "message": "Auto (Detect from Video)",
+    "description": "Auto detect source language option"
+  },
+  "optionsTargetLangs": {
+    "message": "Target Languages",
+    "description": "Target languages label"
+  },
+  "optionsSelectAll": {
+    "message": "Select All",
+    "description": "Select all button"
+  },
+  "optionsDeselectAll": {
+    "message": "Deselect All",
+    "description": "Deselect all button"
+  },
+  "optionsSave": {
+    "message": "Save",
+    "description": "Save button"
+  },
+  "optionsSaved": {
+    "message": "Settings saved successfully.",
+    "description": "Save complete message"
+  },
+  "optionsAdvanced": {
+    "message": "Advanced Settings",
+    "description": "Advanced settings section"
+  },
+  "optionsDelay": {
+    "message": "Delay Between Actions (ms)",
+    "description": "Delay setting label"
+  },
+  "optionsDelayDescription": {
+    "message": "Random delay to prevent YouTube server blocking (default: 1000~3000ms)",
+    "description": "Delay description"
+  },
+  "optionsUseGeminiOAuth": {
+    "message": "Use Google Account (for Gemini Pro subscribers, etc.)",
+    "description": "Whether to use Gemini OAuth"
+  },
+  "sidebarTitle": {
+    "message": "YouTube Translation AI",
+    "description": "Sidebar title"
+  },
+  "sidebarProgressLabel": {
+    "message": "Progress",
+    "description": "Sidebar progress label"
+  },
+  "sidebarEmptyGuide": {
+    "message": "Start translation from the YouTube Studio video edit page.",
+    "description": "Sidebar empty state guide"
+  },
+  "sidebarCloseTitle": {
+    "message": "Close",
+    "description": "Sidebar close button tooltip"
+  },
+  "howToTitle": { "message": "📖 How to Use" },
+  "howToStep1Title": { "message": "Go to YouTube Studio" },
+  "howToStep1Desc": { "message": "Visit <a href=\"https://studio.youtube.com\" target=\"_blank\" style=\"color:#7c4dcc;\">studio.youtube.com</a>." },
+  "howToStep2Title": { "message": "Open the video you want to translate" },
+  "howToStep2Desc": { "message": "Select a video from your content list. The video must already have <strong>source subtitles</strong>." },
+  "howToStep3Title": { "message": "Launch the extension sidebar" },
+  "howToStep3Desc": { "message": "The translation sidebar will appear on the right side of the page. If it doesn't, click the extension icon." },
+  "howToStep4Title": { "message": "Check target languages" },
+  "howToStep4Desc": { "message": "Pre-select languages in the settings below, or adjust them directly in the sidebar." },
+  "howToOptional": { "message": "Optional" },
+  "howToStep5Title": { "message": "Click [Start Translation]" },
+  "howToStep5Desc": { "message": "Once complete, subtitles are automatically uploaded for each selected language in YouTube Studio." },
+  "apiKeyLabel": { "message": "🔑 Gemini API Key" },
+  "apiKeyPlaceholder": { "message": "Paste your API key here" },
+  "keyStatusEmpty": { "message": "No key entered. Follow the guide above to get one for free." },
+  "guideCardTitle": { "message": "API Key Required — Get one free in 30 seconds!" },
+  "guideCardSubtitle": { "message": "No credit card needed — just a Google account" },
+  "guideStep1Title": { "message": "Open Google AI Studio via the button below" },
+  "guideStep1Desc": { "message": "You can access it immediately with a Google account." },
+  "guideStep2Title": { "message": "Click \"Create API Key\"" },
+  "guideStep2Desc": { "message": "There's a blue button at the top right or center. One click and it's done!" },
+  "guideStep3Title": { "message": "Copy the key and paste it below" },
+  "guideStep3Desc": { "message": "Your key looks like <code style=\"background:#e8f0fe;padding:1px 5px;border-radius:3px;font-size:11px;color:#1a73e8;\">AIzaSy...</code>. Copy and paste it into the field below." },
+  "guideAiStudioBtn": { "message": "Get a Free API Key from Google AI Studio →" },
+  "guideNote": { "message": "🔒 Your key is stored only on this device and never sent to external servers." },
+  "guideToggleText": { "message": "📖 Show API key setup guide again" },
+  "optionsModelHint": { "message": "Translation quality and speed vary by model. Gemini 2.0 Flash is recommended." },
+  "optionsSourceLangHint": { "message": "Select \"Auto\" to automatically detect the video's default subtitle language." },
+  "optionsTierLabel": { "message": "⚡ Gemini API Plan" },
+  "optionsTierHint": { "message": "Select your AI Studio plan. Request speed will be adjusted automatically." },
+  "optionsTierFreeTitle": { "message": "🆓 Free Tier" },
+  "optionsTierFreeDesc": { "message": "AI Studio Free Plan · Auto 5-second interval (~12 RPM)" },
+  "optionsTierPaidTitle": { "message": "💳 Paid Tier" },
+  "optionsTierPaidDesc": { "message": "Pay-as-you-go / Billing enabled · Choose your own speed" },
+  "optionsFreeTierNotice": { "message": "⚠️ <strong>Free Tier Limitations</strong><br><br>Gemini's free tier is capped at <strong>1,500 requests per day</strong> with a forced <strong>5-second delay</strong> between requests.<br><br>📊 <strong>Usage Examples</strong><br>• Subtitles every <strong>3 sec</strong>, <strong>20-min video</strong> × 10 languages → ~<strong>80 requests</strong><br>• Subtitles every <strong>2 sec</strong>, <strong>30-min video</strong> × 10 languages → ~<strong>180 requests</strong><br>• Subtitles every <strong>2 sec</strong>, <strong>30-min video</strong> × 26 languages → ~<strong>470 requests</strong> (≈ 3 videos/day max)<br><br>Dense subtitles or more languages drain the quota quickly. The 5-second delay also means translation can take several minutes per video.<br><br>💡 Register a payment method in <a href=\"https://aistudio.google.com/\" target=\"_blank\" style=\"color:#e65100;\">AI Studio</a> to translate without limits and at full speed." },
+  "optionsPaidTierNotice": { "message": "💰 <strong>Estimated Cost (Gemini 2.0 Flash)</strong><br><br>• 10-min video × 5 languages → approx. <strong>$0.01–0.02</strong><br>• 30-min video × 10 languages → approx. <strong>$0.04–0.08</strong><br>• 60-min video × 26 languages → approx. <strong>$0.20–0.40</strong><br><br>Cost varies by video length and subtitle density. In general, <strong>translating one video costs less than a fraction of a cent per language</strong>." },
+  "optionsPaidSpeedLabel": { "message": "Select Translation Speed" },
+  "optionsSpeedFast": { "message": "🚀 Fast — 0.5s interval (~120 RPM)" },
+  "optionsSpeedNormal": { "message": "⚡ Normal — 2s interval (~30 RPM)" },
+  "optionsSpeedSlow": { "message": "🐢 Slow — 5s interval (~12 RPM)" },
+  "optionsLogsLabel": { "message": "🪵 Application Logs (Debug)" },
+  "optionsBtnCopyLogs": { "message": "Copy Logs" },
+  "optionsBtnClearLogs": { "message": "Clear Logs" },
+  "optionsLogsEmpty": { "message": "Logs will appear here." },
+  "optionsAiDisclaimer": { "message": "🤖 <strong>AI Translation Notice</strong> — This extension uses AI (Gemini) to translate subtitles. AI may produce inaccurate translations for context, nuance, or technical terms. <strong>Please review the results before uploading.</strong> You are responsible for the translated content." }
+}

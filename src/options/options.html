@@ -1,0 +1,528 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="../styles/options.css">
+  <style>
+    /* ───── API 키 가이드 카드 ───── */
+    .guide-card {
+      background: linear-gradient(135deg, #f0f7ff 0%, #e8f0fe 100%);
+      border: 1px solid #c5d8fb;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+      transition: all 0.3s ease;
+    }
+    .guide-card.hidden {
+      display: none;
+    }
+
+    .guide-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .guide-header-icon {
+      font-size: 22px;
+      line-height: 1;
+    }
+    .guide-header-text h3 {
+      font-size: 14px;
+      font-weight: 700;
+      color: #1a3a6b;
+      margin-bottom: 2px;
+    }
+    .guide-header-text p {
+      font-size: 12px;
+      color: #4a6fa5;
+    }
+
+    /* 단계별 스텝 */
+    .guide-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .guide-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      background: rgba(255,255,255,0.7);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .step-num {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: #1a73e8;
+      color: #fff;
+      font-size: 11px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .step-content {
+      flex: 1;
+    }
+    .step-content strong {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: #1a1a1a;
+      margin-bottom: 2px;
+    }
+    .step-content span {
+      font-size: 12px;
+      color: #555;
+      line-height: 1.5;
+    }
+    .step-content code {
+      background: #e8f0fe;
+      padding: 1px 5px;
+      border-radius: 3px;
+      font-size: 11px;
+      color: #1a73e8;
+      font-family: monospace;
+    }
+    .step-emoji {
+      font-size: 16px;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    /* AI Studio 이동 버튼 */
+    .btn-aistudio {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 11px;
+      background: #1a73e8;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      transition: background 0.15s;
+    }
+    .btn-aistudio:hover {
+      background: #1557b0;
+    }
+    .btn-aistudio svg {
+      opacity: 0.85;
+    }
+
+    .guide-note {
+      text-align: center;
+      font-size: 11px;
+      color: #6b8ab8;
+      margin-top: 10px;
+    }
+
+    /* ───── API 키 입력 영역 ───── */
+    .api-input-section {
+      margin-bottom: 0;
+    }
+    .api-input-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .api-input-row .input {
+      flex: 1;
+      font-family: monospace;
+      letter-spacing: 0.02em;
+    }
+    .btn-icon {
+      flex-shrink: 0;
+    }
+
+    /* 키 상태 배지 */
+    .key-status {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .key-status.ok    { color: #2e7d32; }
+    .key-status.warn  { color: #e65100; }
+    .key-status.empty { color: #888; }
+    .key-status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .key-status.ok   .key-status-dot { background: #4caf50; }
+    .key-status.warn .key-status-dot { background: #ff9800; }
+    .key-status.empty .key-status-dot { background: #bbb; }
+
+    /* 가이드 토글 링크 */
+    .guide-toggle {
+      font-size: 12px;
+      color: #1a73e8;
+      cursor: pointer;
+      text-decoration: underline;
+      text-underline-offset: 2px;
+      background: none;
+      border: none;
+      padding: 0;
+      margin-top: 4px;
+      display: inline-block;
+    }
+    .guide-toggle:hover { color: #1557b0; }
+
+    /* ───── 섹션 구분선 ───── */
+    .section-divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 24px 0;
+    }
+
+    /* ───── 사용 방법 카드 ───── */
+    .how-to-card {
+      background: linear-gradient(135deg, #f3f0ff 0%, #ede8ff 100%);
+      border: 1px solid #c9bbf7;
+      border-radius: 12px;
+      padding: 18px 20px;
+      margin-bottom: 24px;
+    }
+    .how-to-card summary {
+      font-size: 13px;
+      font-weight: 700;
+      color: #3d1f8c;
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      user-select: none;
+    }
+    .how-to-card summary::-webkit-details-marker { display: none; }
+    .how-to-card summary::after {
+      content: '▾';
+      margin-left: auto;
+      font-size: 14px;
+      color: #7c4dcc;
+      transition: transform 0.2s;
+    }
+    .how-to-card[open] summary::after { transform: rotate(180deg); }
+    .how-to-steps {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      margin-top: 14px;
+    }
+    .how-to-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      background: rgba(255,255,255,0.6);
+      border-radius: 8px;
+      padding: 9px 12px;
+    }
+    .how-to-step .step-num {
+      background: #7c4dcc;
+    }
+    .how-to-step .step-content strong {
+      font-size: 13px;
+      color: #1a1a1a;
+    }
+    .how-to-step .step-content span {
+      font-size: 12px;
+      color: #555;
+    }
+    .how-to-step.optional .step-num {
+      background: #aaa;
+    }
+    .step-optional-badge {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 600;
+      color: #888;
+      background: #eee;
+      border-radius: 3px;
+      padding: 1px 5px;
+      margin-left: 5px;
+      vertical-align: middle;
+    }
+
+    /* ───── 기타 ───── */
+    .hint-small {
+      font-size: 11px;
+      color: var(--text-secondary);
+      margin-top: 5px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 data-i18n="optionsTitle">⚙️ YouTube Auto-Translator 설정</h1>
+
+    <!-- ════════════════════════════
+         사용 방법 가이드
+    ════════════════════════════ -->
+    <details class="how-to-card">
+      <summary data-i18n="howToTitle">📖 사용 방법</summary>
+      <div class="how-to-steps">
+        <div class="how-to-step">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <strong data-i18n="howToStep1Title">YouTube 스튜디오에 접속</strong>
+            <span data-i18n-html="howToStep1Desc"><a href="https://studio.youtube.com" target="_blank" style="color:#7c4dcc;">studio.youtube.com</a> 으로 이동하세요.</span>
+          </div>
+        </div>
+        <div class="how-to-step">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <strong data-i18n="howToStep2Title">번역할 영상의 수정 페이지로 이동</strong>
+            <span data-i18n-html="howToStep2Desc">콘텐츠 목록에서 영상을 선택하고, <strong>자막이 먼저 등록된 영상</strong>이어야 합니다.</span>
+          </div>
+        </div>
+        <div class="how-to-step">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <strong data-i18n="howToStep3Title">사이드바에서 익스텐션 실행</strong>
+            <span data-i18n="howToStep3Desc">페이지 우측에 자동으로 번역 사이드바가 나타납니다. 나타나지 않으면 확장 프로그램 아이콘을 클릭하세요.</span>
+          </div>
+        </div>
+        <div class="how-to-step optional">
+          <div class="step-num">4</div>
+          <div class="step-content">
+            <strong data-i18n="howToStep4Title">번역 언어 확인<span class="step-optional-badge" data-i18n="howToOptional">선택</span></strong>
+            <span data-i18n="howToStep4Desc">아래 설정에서 번역할 언어를 미리 선택해두거나, 사이드바에서 바로 조정할 수 있습니다.</span>
+          </div>
+        </div>
+        <div class="how-to-step">
+          <div class="step-num">5</div>
+          <div class="step-content">
+            <strong data-i18n="howToStep5Title">[번역 시작] 버튼 클릭</strong>
+            <span data-i18n="howToStep5Desc">번역이 완료되면 선택한 언어의 자막이 YouTube 스튜디오에 자동으로 등록됩니다.</span>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- ════════════════════════════
+         Gemini API 키 섹션
+    ════════════════════════════ -->
+    <section class="section api-input-section">
+      <label class="label" data-i18n="apiKeyLabel">🔑 Gemini API 키</label>
+
+      <!-- 발급 가이드 카드 (키가 없을 때 기본 노출) -->
+      <div class="guide-card" id="guideCard">
+        <div class="guide-header">
+          <div class="guide-header-icon">🆓</div>
+          <div class="guide-header-text">
+            <h3 data-i18n="guideCardTitle">API 키가 필요합니다 — 무료로 30초 안에 발급 가능!</h3>
+            <p data-i18n="guideCardSubtitle">신용카드 없이, Google 계정만 있으면 OK</p>
+          </div>
+        </div>
+
+        <div class="guide-steps">
+          <div class="guide-step">
+            <div class="step-num">1</div>
+            <div class="step-content">
+              <strong data-i18n="guideStep1Title">아래 버튼으로 Google AI Studio 접속</strong>
+              <span data-i18n="guideStep1Desc">Google 계정이 있다면 바로 입장 가능합니다.</span>
+            </div>
+            <div class="step-emoji">🌐</div>
+          </div>
+
+          <div class="guide-step">
+            <div class="step-num">2</div>
+            <div class="step-content">
+              <strong data-i18n="guideStep2Title">"API 키 만들기" 클릭</strong>
+              <span data-i18n="guideStep2Desc">우측 상단 또는 중앙에 파란 버튼이 있습니다. 클릭 한 번이면 즉시 생성!</span>
+            </div>
+            <div class="step-emoji">✅</div>
+          </div>
+
+          <div class="guide-step">
+            <div class="step-num">3</div>
+            <div class="step-content">
+              <strong data-i18n="guideStep3Title">키 복사 후 아래에 붙여넣기</strong>
+              <span data-i18n-html="guideStep3Desc">생성된 키는 <code>AIzaSy...</code> 형태입니다. 복사해서 아래 칸에 붙여넣으세요.</span>
+            </div>
+            <div class="step-emoji">📋</div>
+          </div>
+        </div>
+
+        <a href="https://aistudio.google.com/apikey" target="_blank" class="btn-aistudio">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>
+          </svg>
+          <span data-i18n="guideAiStudioBtn">Google AI Studio에서 무료 API 키 발급 →</span>
+        </a>
+
+        <p class="guide-note" data-i18n="guideNote">🔒 발급한 키는 이 기기에만 저장되며, 외부 서버로 전송되지 않습니다.</p>
+      </div>
+
+      <!-- API 키 입력 필드 -->
+      <div class="api-input-row">
+        <input type="password" id="apiKey" class="input" data-i18n-placeholder="apiKeyPlaceholder" placeholder="여기에 API 키를 붙여넣으세요">
+        <button class="btn-icon" id="btnToggleKey" title="표시/숨기기">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+        </button>
+      </div>
+
+      <!-- 키 상태 표시 -->
+      <div class="key-status empty" id="keyStatus">
+        <div class="key-status-dot"></div>
+        <span id="keyStatusText" data-i18n="keyStatusEmpty">키가 입력되지 않았습니다.</span>
+      </div>
+
+      <!-- 가이드 토글 (키가 있을 때 가이드 숨겨지면 다시 볼 수 있는 링크) -->
+      <button class="guide-toggle" id="guideToggle" style="display:none;" data-i18n="guideToggleText">
+        📖 API 키 발급 방법 다시 보기
+      </button>
+    </section>
+
+    <hr class="section-divider">
+
+    <!-- ════════════════════════════
+         모델 선택
+    ════════════════════════════ -->
+    <section class="section">
+      <label class="label" data-i18n="optionsModel">AI 모델 선택</label>
+      <select id="modelSelect" class="select"></select>
+      <p class="hint-small" data-i18n="optionsModelHint">모델마다 번역 품질과 속도가 다릅니다. Gemini 2.0 Flash를 권장합니다.</p>
+    </section>
+
+    <!-- ════════════════════════════
+         소스 언어
+    ════════════════════════════ -->
+    <section class="section">
+      <label class="label" data-i18n="optionsSourceLang">원본 자막 언어</label>
+      <select id="sourceLang" class="select"></select>
+      <p class="hint-small" data-i18n="optionsSourceLangHint">"자동 감지"를 선택하면 영상의 기본 자막 언어를 자동으로 찾습니다.</p>
+    </section>
+
+    <!-- ════════════════════════════
+         번역 대상 언어
+    ════════════════════════════ -->
+    <section class="section">
+      <label class="label" data-i18n="optionsTargetLangs">번역할 언어 선택</label>
+      <div class="lang-controls">
+        <button class="btn-small" id="btnSelectAll" data-i18n="optionsSelectAll">전체 선택</button>
+        <button class="btn-small" id="btnDeselectAll" data-i18n="optionsDeselectAll">전체 해제</button>
+      </div>
+      <div class="lang-grid" id="langGrid"></div>
+    </section>
+
+    <!-- ════════════════════════════
+         Gemini 요금제 & 번역 속도
+    ════════════════════════════ -->
+    <section class="section">
+      <label class="label" data-i18n="optionsTierLabel">⚡ Gemini API 요금제</label>
+      <p class="hint-small" style="margin-bottom:12px;" data-i18n="optionsTierHint">
+        사용 중인 AI Studio 요금제를 선택하세요. 요청 속도가 자동으로 조정됩니다.
+      </p>
+
+      <div class="tier-radio-group">
+        <label class="tier-option" id="tierFreeLabel">
+          <input type="radio" name="geminiTier" id="tierFree" value="free">
+          <div class="tier-option-body">
+            <div class="tier-option-title" data-i18n="optionsTierFreeTitle">🆓 무료 티어</div>
+            <div class="tier-option-desc" data-i18n="optionsTierFreeDesc">AI Studio 무료 플랜 · 자동으로 5초 간격(~12 RPM) 적용</div>
+          </div>
+        </label>
+        <label class="tier-option" id="tierPaidLabel">
+          <input type="radio" name="geminiTier" id="tierPaid" value="paid">
+          <div class="tier-option-body">
+            <div class="tier-option-title" data-i18n="optionsTierPaidTitle">💳 유료 티어</div>
+            <div class="tier-option-desc" data-i18n="optionsTierPaidDesc">Pay-as-you-go / Billing 설정 완료 · 속도를 직접 선택</div>
+          </div>
+        </label>
+      </div>
+
+      <!-- 무료 티어 안내 -->
+      <div id="freeTierNotice" class="notice notice-warn" style="margin-top:12px;" data-i18n-html="optionsFreeTierNotice">
+        <strong>⏱ 무료 티어 번역 속도 안내</strong><br>
+        요청 간격이 <strong>5초</strong>로 자동 설정됩니다. 여러 언어를 동시에 번역하면 완료까지 수 분이 걸릴 수 있습니다.<br>
+        예: 5개 언어 × 10분 영상 → 약 2~4분 소요 / 일일 최대 1,500건 요청
+      </div>
+
+      <!-- 유료 티어 안내 -->
+      <div id="paidTierNotice" class="notice notice-info" style="display:none; margin-top:12px;" data-i18n-html="optionsPaidTierNotice">
+      </div>
+
+      <!-- 유료 티어 속도 선택 -->
+      <div id="paidSpeedSection" style="display:none; margin-top:12px;">
+        <label class="label" style="font-size:13px; margin-bottom:6px;" data-i18n="optionsPaidSpeedLabel">번역 속도 선택</label>
+        <select id="paidSpeed" class="select">
+          <option value="fast" data-i18n="optionsSpeedFast">🚀 빠름 — 0.5초 간격 (~120 RPM)</option>
+          <option value="normal" selected data-i18n="optionsSpeedNormal">⚡ 보통 — 2초 간격 (~30 RPM)</option>
+          <option value="slow" data-i18n="optionsSpeedSlow">🐢 느리게 — 5초 간격 (~12 RPM)</option>
+        </select>
+      </div>
+    </section>
+
+    <!-- ════════════════════════════
+         고급 설정
+    ════════════════════════════ -->
+    <details class="advanced">
+      <summary data-i18n="optionsAdvanced">고급 설정</summary>
+      <div class="advanced-content">
+        <section class="section">
+          <label class="label" data-i18n="optionsDelay">청크 간 추가 대기 (ms)</label>
+          <div class="delay-group">
+            <input type="number" id="delayMin" class="input input-small" min="0" max="10000" step="100">
+            <span>~</span>
+            <input type="number" id="delayMax" class="input input-small" min="0" max="15000" step="100">
+            <span>ms</span>
+          </div>
+          <p class="hint" data-i18n="optionsDelayDescription">Rate Limiter 외 추가 딜레이가 필요할 경우 설정합니다. 보통 0으로 두어도 됩니다.</p>
+        </section>
+      </div>
+    </details>
+
+    <!-- ════════════════════════════
+         로그
+    ════════════════════════════ -->
+    <section class="section logs-section">
+      <label class="label" data-i18n="optionsLogsLabel">🪵 애플리케이션 로그 (디버깅용)</label>
+      <div class="log-controls">
+        <button class="btn-small" id="btnCopyLogs" data-i18n="optionsBtnCopyLogs">로그 복사</button>
+        <button class="btn-small" id="btnClearLogs" data-i18n="optionsBtnClearLogs">로그 삭제</button>
+      </div>
+      <div id="logPreview" class="log-preview" data-i18n="optionsLogsEmpty">로그가 여기에 표시됩니다.</div>
+    </section>
+
+    <!-- ════════════════════════════
+         AI 번역 면책 고지
+    ════════════════════════════ -->
+    <div class="notice notice-info" style="margin-top: 8px;" data-i18n-html="optionsAiDisclaimer">
+      🤖 <strong>AI 번역 안내</strong> — 이 확장 프로그램은 AI(Gemini)가 자막을 번역합니다.
+      AI는 문맥·뉘앙스·전문 용어에서 오역이 발생할 수 있습니다.
+      <strong>업로드 전 번역 결과를 반드시 검토</strong>해 주세요.
+      번역 결과에 대한 책임은 사용자에게 있습니다.
+    </div>
+
+    <!-- ════════════════════════════
+         저장 버튼
+    ════════════════════════════ -->
+    <div class="actions">
+      <button class="btn btn-primary" id="btnSave" data-i18n="optionsSave">저장</button>
+      <span class="save-status" id="saveStatus"></span>
+    </div>
+  </div>
+
+  <script src="options.js" type="module"></script>
+</body>
+</html>

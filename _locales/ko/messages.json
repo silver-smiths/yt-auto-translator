@@ -1,0 +1,205 @@
+{
+  "extensionName": {
+    "message": "YouTube \uc790\ub3d9 \ubc88\uc5ed\uae30",
+    "description": "\uc775\uc2a4\ud150\uc158 \uc774\ub984"
+  },
+  "extensionDescription": {
+    "message": "\uc720\ud29c\ube0c \uc2a4\ud29c\ub514\uc624 \uc601\uc0c1\uc758 \uc790\ub9c9\uc744 26\uac1c \uc5b8\uc5b4\ub85c \uc790\ub3d9 \ubc88\uc5ed \ubc0f \ub4f1\ub85d\ud569\ub2c8\ub2e4.",
+    "description": "\uc775\uc2a4\ud150\uc158 \uc124\uba85"
+  },
+  "popupTitle": {
+    "message": "YouTube \uc790\ub3d9 \ubc88\uc5ed\uae30",
+    "description": "\ud31d\uc5c5 \uc81c\ubaa9"
+  },
+  "btnStartTranslation": {
+    "message": "\ubc88\uc5ed \uc2dc\uc791",
+    "description": "\ubc88\uc5ed \uc2dc\uc791 \ubc84\ud2bc"
+  },
+  "btnStopTranslation": {
+    "message": "\ubc88\uc5ed \uc911\uc9c0",
+    "description": "\ubc88\uc5ed \uc911\uc9c0 \ubc84\ud2bc"
+  },
+  "btnOpenSettings": {
+    "message": "\uc124\uc815",
+    "description": "\uc124\uc815 \ubc84\ud2bc"
+  },
+  "statusIdle": {
+    "message": "\ub300\uae30 \uc911",
+    "description": "\ub300\uae30 \uc0c1\ud0dc"
+  },
+  "statusExtracting": {
+    "message": "\uc790\ub9c9 \ucd94\ucd9c \uc911...",
+    "description": "\uc790\ub9c9 \ucd94\ucd9c \uc911 \uc0c1\ud0dc"
+  },
+  "statusTranslating": {
+    "message": "\ubc88\uc5ed \uc911... ($LANG$ - $CURRENT$/$TOTAL$)",
+    "description": "\ubc88\uc5ed \uc911 \uc0c1\ud0dc",
+    "placeholders": {
+      "lang": { "content": "$1", "example": "English" },
+      "current": { "content": "$2", "example": "3" },
+      "total": { "content": "$3", "example": "26" }
+    }
+  },
+  "statusUploading": {
+    "message": "\uc790\ub9c9 \uc5c5\ub85c\ub4dc \uc911... ($LANG$)",
+    "description": "\uc5c5\ub85c\ub4dc \uc911 \uc0c1\ud0dc",
+    "placeholders": {
+      "lang": { "content": "$1", "example": "English" }
+    }
+  },
+  "statusComplete": {
+    "message": "\uc644\ub8cc! $COUNT$\uac1c \uc5b8\uc5b4 \ubc88\uc5ed \uc131\uacf5",
+    "description": "\uc644\ub8cc \uc0c1\ud0dc",
+    "placeholders": {
+      "count": { "content": "$1", "example": "26" }
+    }
+  },
+  "statusError": {
+    "message": "\uc624\ub958 \ubc1c\uc0dd: $MESSAGE$",
+    "description": "\uc624\ub958 \uc0c1\ud0dc",
+    "placeholders": {
+      "message": { "content": "$1", "example": "API key not found" }
+    }
+  },
+  "errorNoApiKey": {
+    "message": "API Key\uac00 \uc124\uc815\ub418\uc9c0 \uc54a\uc558\uc2b5\ub2c8\ub2e4. \uc124\uc815 \ud398\uc774\uc9c0\uc5d0\uc11c API Key\ub97c \uc785\ub825\ud574\uc8fc\uc138\uc694.",
+    "description": "API Key \ubbf8\uc124\uc815 \uc624\ub958"
+  },
+  "errorNotYoutubeStudio": {
+    "message": "\uc720\ud29c\ube0c \uc2a4\ud29c\ub514\uc624 \uc601\uc0c1 \uc218\uc815 \ud398\uc774\uc9c0\uc5d0\uc11c\ub9cc \uc0ac\uc6a9 \uac00\ub2a5\ud569\ub2c8\ub2e4.",
+    "description": "\uc720\ud29c\ube0c \uc2a4\ud29c\ub514\uc624 \uc678\ubd80 \uc624\ub958"
+  },
+  "errorNoSubtitles": {
+    "message": "\ucd94\ucd9c\ud560 \uc790\ub9c9\uc744 \ucc3e\uc744 \uc218 \uc5c6\uc2b5\ub2c8\ub2e4.",
+    "description": "\uc790\ub9c9 \uc5c6\uc74c \uc624\ub958"
+  },
+  "optionsTitle": {
+    "message": "YouTube \uc790\ub3d9 \ubc88\uc5ed\uae30 \uc124\uc815",
+    "description": "\uc635\uc158 \ud398\uc774\uc9c0 \uc81c\ubaa9"
+  },
+  "optionsApiProvider": {
+    "message": "LLM API \uc81c\uacf5\uc790",
+    "description": "API \uc81c\uacf5\uc790 \uc120\ud0dd \ub808\uc774\ube14"
+  },
+  "optionsApiKey": {
+    "message": "API Key",
+    "description": "API Key \uc785\ub825 \ub808\uc774\ube14"
+  },
+  "optionsApiKeyPlaceholder": {
+    "message": "API Key\ub97c \uc785\ub825\ud558\uc138\uc694",
+    "description": "API Key \uc785\ub825 \ud50c\ub808\uc774\uc2a4\ud640\ub354"
+  },
+  "optionsUseGeminiOAuth": {
+    "message": "Google 계정(OAuth)으로 Gemini 사용",
+    "description": "Google OAuth를 사용하여 Gemini API를 호출하는 옵션"
+  },
+  "optionsModel": {
+    "message": "\ubaa8\ub378 \uc120\ud0dd",
+    "description": "\ubaa8\ub378 \uc120\ud0dd \ub808\uc774\ube14"
+  },
+  "optionsSourceLang": {
+    "message": "\uc6d0\ubcf8 \uc5b8\uc5b4",
+    "description": "\uc6d0\ubcf8 \uc5b8\uc5b4 \ub808\uc774\ube14"
+  },
+  "optionsSourceLangAuto": {
+    "message": "\uc790\ub3d9 \uac10\uc9c0 (\uc601\uc0c1 \uc790\ub9c9 \uae30\uc900)",
+    "description": "\uc6d0\ubcf8 \uc5b8\uc5b4 \uc790\ub3d9 \uac10\uc9c0 \uc635\uc158"
+  },
+  "optionsTargetLangs": {
+    "message": "\ubc88\uc5ed \ub300\uc0c1 \uc5b8\uc5b4",
+    "description": "\ubc88\uc5ed \ub300\uc0c1 \uc5b8\uc5b4 \ub808\uc774\ube14"
+  },
+  "optionsSelectAll": {
+    "message": "\uc804\uccb4 \uc120\ud0dd",
+    "description": "\uc804\uccb4 \uc120\ud0dd \ubc84\ud2bc"
+  },
+  "optionsDeselectAll": {
+    "message": "\uc804\uccb4 \ud574\uc81c",
+    "description": "\uc804\uccb4 \ud574\uc81c \ubc84\ud2bc"
+  },
+  "optionsSave": {
+    "message": "\uc800\uc7a5",
+    "description": "\uc800\uc7a5 \ubc84\ud2bc"
+  },
+  "optionsSaved": {
+    "message": "\uc124\uc815\uc774 \uc800\uc7a5\ub418\uc5c8\uc2b5\ub2c8\ub2e4.",
+    "description": "\uc800\uc7a5 \uc644\ub8cc \uba54\uc2dc\uc9c0"
+  },
+  "optionsAdvanced": {
+    "message": "\uace0\uae09 \uc124\uc815",
+    "description": "\uace0\uae09 \uc124\uc815 \uc139\uc158"
+  },
+  "optionsDelay": {
+    "message": "\uc791\uc5c5 \uac04 \ub51c\ub808\uc774 (ms)",
+    "description": "\ub51c\ub808\uc774 \uc124\uc815 \ub808\uc774\ube14"
+  },
+  "optionsDelayDescription": {
+    "message": "YouTube \uc11c\ubc84 \ucc28\ub2e8 \ubc29\uc9c0\ub97c \uc704\ud55c \ub79c\ub364 \ub51c\ub808\uc774 (\uae30\ubcf8: 1000~3000ms)",
+    "description": "\ub51c\ub808\uc774 \uc124\uba85"
+  },
+  "optionsUseGeminiOAuth": {
+    "message": "Google \uacc4\uc815 \uc0ac\uc6a9 (Gemini Pro \uad6c\ub3c5\uc790 \ub4f1)",
+    "description": "Gemini OAuth \uc0ac\uc6a9 \uc5ec\ubd80"
+  },
+  "sidebarTitle": {
+    "message": "YouTube 번역 AI",
+    "description": "사이드바 제목"
+  },
+  "sidebarProgressLabel": {
+    "message": "진행률",
+    "description": "사이드바 진행률 레이블"
+  },
+  "sidebarEmptyGuide": {
+    "message": "유튜브 스튜디오의 영상 수정 페이지에서 번역을 시작하세요.",
+    "description": "사이드바 비어있을 때 안내"
+  },
+  "sidebarCloseTitle": {
+    "message": "닫기",
+    "description": "사이드바 닫기 버튼 툴팁"
+  },
+  "howToTitle": { "message": "📖 사용 방법" },
+  "howToStep1Title": { "message": "YouTube 스튜디오에 접속" },
+  "howToStep1Desc": { "message": "<a href=\"https://studio.youtube.com\" target=\"_blank\" style=\"color:#7c4dcc;\">studio.youtube.com</a> 으로 이동하세요." },
+  "howToStep2Title": { "message": "번역할 영상의 수정 페이지로 이동" },
+  "howToStep2Desc": { "message": "콘텐츠 목록에서 영상을 선택하고, <strong>자막이 먼저 등록된 영상</strong>이어야 합니다." },
+  "howToStep3Title": { "message": "사이드바에서 익스텐션 실행" },
+  "howToStep3Desc": { "message": "페이지 우측에 자동으로 번역 사이드바가 나타납니다. 나타나지 않으면 확장 프로그램 아이콘을 클릭하세요." },
+  "howToStep4Title": { "message": "번역 언어 확인" },
+  "howToStep4Desc": { "message": "아래 설정에서 번역할 언어를 미리 선택해두거나, 사이드바에서 바로 조정할 수 있습니다." },
+  "howToOptional": { "message": "선택" },
+  "howToStep5Title": { "message": "[번역 시작] 버튼 클릭" },
+  "howToStep5Desc": { "message": "번역이 완료되면 선택한 언어의 자막이 YouTube 스튜디오에 자동으로 등록됩니다." },
+  "apiKeyLabel": { "message": "🔑 Gemini API 키" },
+  "apiKeyPlaceholder": { "message": "여기에 API 키를 붙여넣으세요" },
+  "keyStatusEmpty": { "message": "키가 입력되지 않았습니다. 위 가이드를 따라 무료로 발급해 주세요." },
+  "guideCardTitle": { "message": "API 키가 필요합니다 — 무료로 30초 안에 발급 가능!" },
+  "guideCardSubtitle": { "message": "신용카드 없이, Google 계정만 있으면 OK" },
+  "guideStep1Title": { "message": "아래 버튼으로 Google AI Studio 접속" },
+  "guideStep1Desc": { "message": "Google 계정이 있다면 바로 입장 가능합니다." },
+  "guideStep2Title": { "message": "\"API 키 만들기\" 클릭" },
+  "guideStep2Desc": { "message": "우측 상단 또는 중앙에 파란 버튼이 있습니다. 클릭 한 번이면 즉시 생성!" },
+  "guideStep3Title": { "message": "키 복사 후 아래에 붙여넣기" },
+  "guideStep3Desc": { "message": "생성된 키는 <code style=\"background:#e8f0fe;padding:1px 5px;border-radius:3px;font-size:11px;color:#1a73e8;\">AIzaSy...</code> 형태입니다. 복사해서 아래 칸에 붙여넣으세요." },
+  "guideAiStudioBtn": { "message": "Google AI Studio에서 무료 API 키 발급 →" },
+  "guideNote": { "message": "🔒 발급한 키는 이 기기에만 저장되며, 외부 서버로 전송되지 않습니다." },
+  "guideToggleText": { "message": "📖 API 키 발급 방법 다시 보기" },
+  "optionsModelHint": { "message": "모델마다 번역 품질과 속도가 다릅니다. Gemini 2.0 Flash를 권장합니다." },
+  "optionsSourceLangHint": { "message": "\"자동 감지\"를 선택하면 영상의 기본 자막 언어를 자동으로 찾습니다." },
+  "optionsTierLabel": { "message": "⚡ Gemini API 요금제" },
+  "optionsTierHint": { "message": "사용 중인 AI Studio 요금제를 선택하세요. 요청 속도가 자동으로 조정됩니다." },
+  "optionsTierFreeTitle": { "message": "🆓 무료 티어" },
+  "optionsTierFreeDesc": { "message": "AI Studio 무료 플랜 · 자동으로 5초 간격(~12 RPM) 적용" },
+  "optionsTierPaidTitle": { "message": "💳 유료 티어" },
+  "optionsTierPaidDesc": { "message": "Pay-as-you-go / Billing 설정 완료 · 속도를 직접 선택" },
+  "optionsFreeTierNotice": { "message": "⚠️ <strong>무료 티어 한계 안내</strong><br><br>Gemini 무료 티어는 하루 <strong>1,500건</strong> 요청 제한이 있으며, 요청 간격도 <strong>5초</strong>로 강제됩니다.<br><br>📊 <strong>소모량 예시</strong><br>• 자막이 <strong>3초 간격</strong>으로 교체되는 <strong>20분 영상</strong> × 10개 언어 → 약 <strong>80건</strong> 소모<br>• 자막이 <strong>2초 간격</strong>으로 교체되는 <strong>30분 영상</strong> × 10개 언어 → 약 <strong>180건</strong> 소모<br>• 자막이 <strong>2초 간격</strong>으로 교체되는 <strong>30분 영상</strong> × 26개 언어 → 약 <strong>470건</strong> 소모 (하루 3편이 한계)<br><br>자막이 촘촘하거나 언어를 많이 선택할수록 한도가 빠르게 소진됩니다. 또한 5초 대기로 인해 번역 완료까지 수 분 이상 소요됩니다.<br><br>💡 <a href=\"https://aistudio.google.com/\" target=\"_blank\" style=\"color:#e65100;\">AI Studio</a>에서 결제 수단을 등록하면 제한 없이 빠르게 번역할 수 있습니다." },
+  "optionsPaidTierNotice": { "message": "💰 <strong>예상 비용 (Gemini 2.0 Flash 기준)</strong><br><br>• 10분 영상 × 5개 언어 → 약 <strong>10~20원</strong><br>• 30분 영상 × 10개 언어 → 약 <strong>50~100원</strong><br>• 60분 영상 × 26개 언어 → 약 <strong>300~500원</strong><br><br>영상 길이·자막 밀도에 따라 달라질 수 있으며, 일반적으로 <strong>영상 1편당 커피 한 잔의 1/100 수준</strong>입니다." },
+  "optionsPaidSpeedLabel": { "message": "번역 속도 선택" },
+  "optionsSpeedFast": { "message": "🚀 빠름 — 0.5초 간격 (~120 RPM)" },
+  "optionsSpeedNormal": { "message": "⚡ 보통 — 2초 간격 (~30 RPM)" },
+  "optionsSpeedSlow": { "message": "🐢 느리게 — 5초 간격 (~12 RPM)" },
+  "optionsLogsLabel": { "message": "🪵 애플리케이션 로그 (디버깅용)" },
+  "optionsBtnCopyLogs": { "message": "로그 복사" },
+  "optionsBtnClearLogs": { "message": "로그 삭제" },
+  "optionsLogsEmpty": { "message": "로그가 여기에 표시됩니다." },
+  "optionsAiDisclaimer": { "message": "🤖 <strong>AI 번역 안내</strong> — 이 확장 프로그램은 AI(Gemini)가 자막을 번역합니다. AI는 문맥·뉘앙스·전문 용어에서 오역이 발생할 수 있습니다. <strong>업로드 전 번역 결과를 반드시 검토</strong>해 주세요. 번역 결과에 대한 책임은 사용자에게 있습니다." }
+}
