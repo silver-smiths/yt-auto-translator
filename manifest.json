@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "__MSG_extensionName__",
   "description": "__MSG_extensionDescription__",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnED9Mv1LyTsri7RMlBdQyNI88F/VNwHnPhWoZhsAxpD3+6W2uIAW3DDmfPsA/+uuBLvm41mYqb6rg9w3/bBbVVyyiFQpEWCvFITaqEyXAOUMvjC6C1lKLS7R4ZFuCmW0Pi0dhHriJlmm2TIMNI5WFGyOXAml5SMmZW5rzoZFBCAc/tf4osSsPiZ0XmOmS8kyg6sNQowrhWlqoxqHbhqIfQnDtG6xP2C6q7sLet2hTvKIjLW4J431pu3rEVA0snZpgo6i6SZFMd7RzmFtFEQCUX79a2Jfg6Rp2Kq/lyx0jxOTaYMyvbrLnvspalBDOtEwguW/wFkax2duiotPWzofmQIDAQAB",
   "default_locale": "ko",
   "permissions": [
