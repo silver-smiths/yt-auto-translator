@@ -155,9 +155,10 @@
   to { transform: translateY(0); opacity: 1; }
 }
 
-.status-card.info { border-left: 4px solid var(--yt-translator-primary); }
+.status-card.info    { border-left: 4px solid var(--yt-translator-primary); }
 .status-card.success { border-left: 4px solid var(--yt-translator-success); }
-.status-card.error { border-left: 4px solid var(--yt-translator-error); }
+.status-card.error   { border-left: 4px solid var(--yt-translator-error); }
+.status-card.warning { border-left: 4px solid #FFB74D; }
 
 .status-header {
   display: flex;

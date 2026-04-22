@@ -343,7 +343,8 @@ class SidebarManager {
   initChips(targetLangs) {
     if (!targetLangs.length) return;
     this.chipArea.innerHTML = '';
-    this.langStatuses = {};
+    this.langStatuses    = {};
+    this.activeLangCards = {}; // 이전 번역의 카드 참조 초기화
 
     targetLangs.forEach(code => {
       const chip = document.createElement('span');
