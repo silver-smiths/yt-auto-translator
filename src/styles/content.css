@@ -173,9 +173,35 @@
   letter-spacing: 0.5px;
 }
 
+.status-header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .status-time {
   font-size: 10px;
   color: var(--yt-translator-text-secondary);
+}
+
+.card-dismiss-btn {
+  background: none;
+  border: none;
+  color: var(--yt-translator-text-secondary);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 2px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.status-card:hover .card-dismiss-btn {
+  opacity: 1;
+}
+
+.card-dismiss-btn:hover {
+  color: var(--yt-translator-error);
 }
 
 .status-text {

@@ -392,22 +392,59 @@ class SidebarManager {
     return true;
   }
 
+  // ── 로그 카드 개별 삭제 (DOM + storage) ──────
+  async dismissLog(tsIso) {
+    if (!isContextValid() || !tsIso) return;
+    try {
+      const r    = await chrome.storage.local.get('appLogs');
+      const logs = (r.appLogs || []).filter(e => e.timestamp !== tsIso);
+      await chrome.storage.local.set({ appLogs: logs });
+    } catch (e) {
+      console.warn('[YT-Translator] 로그 삭제 실패:', e);
+    }
+  }
+
   // ── 로그 카드 추가 ────────────────────────────
   // langCode를 넘기면 activeLangCards에 참조를 저장해 나중에 in-place 업데이트 가능
   addLog(message, type = 'info', timestamp = new Date(), silent = false, langCode = null) {
     const card = document.createElement('div');
     card.className = `status-card ${type}`;
-    const time = (timestamp || new Date()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const ts   = (timestamp || new Date());
+    const time = ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+
+    // 카드에 timestamp 보관 — dismissLog에서 storage 항목 매칭에 사용
+    card.dataset.logTs = ts.toISOString();
+
     const header = document.createElement('div');
     header.className = 'status-header';
     const typeLabel = document.createElement('span');
     typeLabel.className = 'status-type-label';
     typeLabel.textContent = type.toUpperCase();
+
+    // 오른쪽 영역: 시간 + × 버튼
+    const headerRight = document.createElement('div');
+    headerRight.className = 'status-header-right';
     const timeLabel = document.createElement('span');
     timeLabel.className = 'status-time';
     timeLabel.textContent = time;
+    const dismissBtn = document.createElement('button');
+    dismissBtn.className = 'card-dismiss-btn';
+    dismissBtn.textContent = '×';
+    dismissBtn.title = '삭제';
+    dismissBtn.onclick = (e) => {
+      e.stopPropagation();
+      this.dismissLog(card.dataset.logTs);
+      card.remove();
+      // activeLangCards 참조도 정리
+      if (langCode && this.activeLangCards[langCode]?.cardEl === card) {
+        delete this.activeLangCards[langCode];
+      }
+    };
+    headerRight.appendChild(timeLabel);
+    headerRight.appendChild(dismissBtn);
+
     header.appendChild(typeLabel);
-    header.appendChild(timeLabel);
+    header.appendChild(headerRight);
     const body = document.createElement('div');
     body.className = 'status-text';
     body.textContent = message;
