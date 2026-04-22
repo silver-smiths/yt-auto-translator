@@ -5,7 +5,7 @@
  */
 import { GEMINI_CONFIG, RATE_CONFIGS, TRANSLATION_PROMPT } from './constants.js';
 
-const CHUNK_SIZE  = 50; // 청크당 자막 수
+export const CHUNK_SIZE = 50; // 청크당 자막 수
 const MAX_RETRIES = 4;   // 429 최대 재시도 횟수
 
 // ── Rate Limiter ─────────────────────────────────────────────────────────────
@@ -56,7 +56,7 @@ export function configureRateLimit(rateKey) {
 /**
  * 자막 번역 (ID 기반 매핑 + 청크 분할)
  */
-export async function translateSubtitles({ apiKey, model, sourceLang, targetLang, subtitles }) {
+export async function translateSubtitles({ apiKey, model, sourceLang, targetLang, subtitles, onChunkProgress }) {
   const results = new Array(subtitles.length);
 
   // 청크 단위 번역 — 재귀 호출로 MAX_TOKENS 분할 처리
@@ -170,9 +170,14 @@ export async function translateSubtitles({ apiKey, model, sourceLang, targetLang
     }
   }
 
+  const totalChunks = Math.ceil(subtitles.length / CHUNK_SIZE);
+  let chunksCompleted = 0;
+
   for (let i = 0; i < subtitles.length; i += CHUNK_SIZE) {
     const chunk = subtitles.slice(i, i + CHUNK_SIZE);
     await processSegment(chunk, i);
+    chunksCompleted++;
+    if (onChunkProgress) onChunkProgress(chunksCompleted, totalChunks);
   }
 
   return results;

@@ -186,6 +186,7 @@ async function loadAndApply() {
   buildModelOptions(settings.selectedModel);
   buildSourceLangSelect(settings.sourceLang);
   buildLangGrid(settings.targetLangs);
+  updateSaveButton(); // 저장된 언어가 없으면 버튼 비활성화
 
   // 요금제 설정
   const tier = settings.geminiTier || 'free';
@@ -198,6 +199,29 @@ async function loadAndApply() {
 }
 
 // =============================================
+// 저장 버튼 활성화 상태 관리
+// =============================================
+function updateSaveButton() {
+  const count = langGrid.querySelectorAll('input[type="checkbox"]:checked').length;
+  if (count === 0) {
+    btnSave.disabled = true;
+    saveStatus.textContent = '⚠️ 번역할 언어를 1개 이상 선택해 주세요.';
+    saveStatus.style.color = '#e65100';
+    saveStatus.classList.add('visible');
+  } else {
+    btnSave.disabled = false;
+    if (saveStatus.textContent.includes('언어를')) {
+      saveStatus.classList.remove('visible');
+      saveStatus.textContent = '';
+      saveStatus.style.color = '';
+    }
+  }
+}
+
+// 언어 체크박스 변경 시 저장 버튼 상태 갱신 (이벤트 위임)
+langGrid.addEventListener('change', updateSaveButton);
+
+// =============================================
 // 전체 선택 / 해제
 // =============================================
 btnSelectAll.addEventListener('click', () => {
@@ -205,12 +229,14 @@ btnSelectAll.addEventListener('click', () => {
     cb.checked = true;
     cb.closest('.lang-item').classList.add('selected');
   });
+  updateSaveButton();
 });
 btnDeselectAll.addEventListener('click', () => {
   langGrid.querySelectorAll('input[type="checkbox"]').forEach(cb => {
     cb.checked = false;
     cb.closest('.lang-item').classList.remove('selected');
   });
+  updateSaveButton();
 });
 
 // =============================================

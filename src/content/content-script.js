@@ -35,6 +35,12 @@ function isContextValid() {
   try { return !!chrome.runtime?.id; } catch { return false; }
 }
 
+// ── 영상 수정 페이지 여부 확인 ──
+// studio.youtube.com/video/[videoId]/... 패턴일 때만 사이드바 표시
+function isVideoPage() {
+  return /studio\.youtube\.com\/video\/[^/?#]+/.test(location.href);
+}
+
 // ── 에러 리포트 헬퍼 ──
 function reportError(error, source = 'content-script') {
   if (!isContextValid()) return; // 컨텍스트 무효화 시 조용히 무시
@@ -72,7 +78,8 @@ class SidebarManager {
     this.chipArea    = null;
     this.btnStart    = null;
     this.btnStop     = null;
-    this.langStatuses = {};
+    this.langStatuses    = {};
+    this.activeLangCards = {}; // lang 코드 → { cardEl, bodyEl, typeLabelEl }
 
     this.init();
     this.startObserver();
@@ -80,6 +87,13 @@ class SidebarManager {
 
   // ── 초기화 ──────────────────────────────────
   init() {
+    // 영상 수정 페이지가 아니면 사이드바 제거 후 종료
+    if (!isVideoPage()) {
+      const existing = document.getElementById('yt-translator-sidebar-host');
+      if (existing) existing.remove();
+      return;
+    }
+
     const existingHost = document.getElementById('yt-translator-sidebar-host');
     if (existingHost) {
       const shadow = existingHost.shadowRoot;
@@ -360,11 +374,27 @@ class SidebarManager {
     const fill  = this.progressArea.querySelector('.progress-bar-fill');
     const label = this.progressArea.querySelector('.progress-percent');
     fill.style.width   = `${pct}%`;
-    label.textContent  = `${pct}% (${current}/${total})`;
+    label.textContent  = `${pct}%`;
+  }
+
+  // ── 언어 로그 카드 in-place 업데이트 ──────────
+  // isChunkUpdate 메시지에서 "번역 중... (N/M 청크)" 텍스트를 갱신하고,
+  // done=true 시 카드를 success 타입으로 전환한다.
+  // 카드가 없으면 false를 반환해 호출자가 addLog로 새 카드를 만들도록 한다.
+  updateLangCard(lang, message, type) {
+    const entry = this.activeLangCards[lang];
+    if (!entry) return false;
+    const { cardEl, bodyEl, typeLabelEl } = entry;
+    bodyEl.textContent        = message;
+    cardEl.className          = `status-card ${type}`;
+    typeLabelEl.textContent   = type.toUpperCase();
+    if (type !== 'info') delete this.activeLangCards[lang]; // 완료/오류 시 추적 해제
+    return true;
   }
 
   // ── 로그 카드 추가 ────────────────────────────
-  addLog(message, type = 'info', timestamp = new Date(), silent = false) {
+  // langCode를 넘기면 activeLangCards에 참조를 저장해 나중에 in-place 업데이트 가능
+  addLog(message, type = 'info', timestamp = new Date(), silent = false, langCode = null) {
     const card = document.createElement('div');
     card.className = `status-card ${type}`;
     const time = (timestamp || new Date()).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -388,6 +418,11 @@ class SidebarManager {
     if (guide) guide.remove();
 
     this.contentArea.insertBefore(card, this.contentArea.firstChild);
+
+    // 언어 코드가 주어지면 in-place 업데이트를 위해 참조 저장
+    if (langCode) {
+      this.activeLangCards[langCode] = { cardEl: card, bodyEl: body, typeLabelEl: typeLabel };
+    }
 
     // 에러/성공/시작 시 사이드바 자동 열기
     if (!silent && (type === 'success' || type === 'error' ||
@@ -463,13 +498,24 @@ try {
     }
 
     if (message.type === MSG.TRANSLATION_PROGRESS) {
-      const { lang, langName, current, total, done } = message;
+      const { lang, langName, current, total, done, isChunkUpdate } = message;
 
       if (langName) {
-        // 완료된 언어는 ✓ suffix 포함해서 들어옴
-        const isDone = done || /완료/.test(langName);
-        sidebar.addLog(`${isDone ? '✅' : '🔄'} ${langName}`, isDone ? 'success' : 'info');
-        if (lang) sidebar.updateChip(lang, isDone ? 'done' : 'translating');
+        const isDone  = done || /완료/.test(langName);
+        const msgText = `${isDone ? '✅' : '🔄'} ${langName}`;
+        const msgType = isDone ? 'success' : 'info';
+
+        if (lang) {
+          // 기존 카드 업데이트 시도 → 없으면 새 카드 생성
+          if (!sidebar.updateLangCard(lang, msgText, msgType)) {
+            // 아직 카드가 없는 경우 (최초 언어 시작 메시지) — 카드를 만들고 참조 저장
+            sidebar.addLog(msgText, msgType, new Date(), false, isDone ? null : lang);
+          }
+          sidebar.updateChip(lang, isDone ? 'done' : 'translating');
+        } else {
+          // lang 코드 없는 상태 메시지 (인증 중, 영상 조회 중 등)
+          sidebar.addLog(msgText, msgType);
+        }
       }
 
       if (typeof current === 'number' && typeof total === 'number' && total > 0) {
@@ -482,7 +528,11 @@ try {
       const errCount = message.errors?.length || 0;
       const total    = message.count + errCount;
 
-      if (message.count === 0 && errCount > 0) {
+      if (message.allSkipped) {
+        // 모든 언어가 이미 번역되어 건너뜀
+        sidebar.updateProgress(0, 0);
+        sidebar.addLog('✅ 모든 언어에 이미 번역된 자막이 있습니다. 번역을 건너뛰었습니다.', 'success');
+      } else if (message.count === 0 && errCount > 0) {
         // 전부 실패 — success 카드 대신 error 카드
         sidebar.updateProgress(0, total);
         sidebar.addLog(

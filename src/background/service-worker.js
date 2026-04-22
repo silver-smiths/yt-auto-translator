@@ -7,7 +7,7 @@
  */
 import { MSG, TARGET_LANGUAGES } from '../lib/constants.js';
 import { loadSettings } from '../lib/storage.js';
-import { translateSubtitles, configureRateLimit } from '../lib/llm-api.js';
+import { translateSubtitles, configureRateLimit, CHUNK_SIZE } from '../lib/llm-api.js';
 import { reportError, reportTranslationResult, installGlobalErrorHandler, log, LOG_LEVEL, initSentry } from '../lib/logger.js';
 import {
   authorizeYouTube,
@@ -106,10 +106,10 @@ function friendlyError(err) {
 /**
  * Popup + Content Script 양쪽으로 메시지 브로드캐스트
  */
-function broadcast(message) {
+function broadcast(message, tabId = state.tabId) {
   chrome.runtime.sendMessage(message).catch(e => console.warn('[YT-Translator] broadcast(popup) 실패:', e?.message));
-  if (state.tabId) {
-    chrome.tabs.sendMessage(state.tabId, message).catch(e => console.warn('[YT-Translator] broadcast(content) 실패:', e?.message));
+  if (tabId) {
+    chrome.tabs.sendMessage(tabId, message).catch(e => console.warn('[YT-Translator] broadcast(content) 실패:', e?.message));
   }
 }
 
@@ -206,26 +206,64 @@ async function runTranslation(tabId, settings) {
       total: state.progress.total
     });
 
-    // 5. 대상 언어 필터링 (원본과 동일 언어 스킵 — auto 모드에서만)
+    // 5. 대상 언어 필터링
     const normSourceLang = normalizeLangCode(trackInfo.language);
+    const alreadyTranslated = []; // 이미 번역된 언어 이름 목록 (안내용)
+
     const targetLangs = settings.targetLangs.filter(code => {
       const lang = TARGET_LANGUAGES.find(l => l.code === code);
       if (!lang) return false;
 
-      const normTarget  = normalizeLangCode(code);
+      const normTarget   = normalizeLangCode(code);
       const normYtTarget = normalizeLangCode(lang.ytCode);
 
+      // 원본과 동일 언어 스킵 (auto 모드에서만)
       if ((normTarget === normSourceLang || normYtTarget === normSourceLang) &&
           settings.sourceLang === 'auto' && !trackInfo.isASR) {
         log(`동일 언어 스킵: ${lang.name}`, LOG_LEVEL.INFO);
         return false;
       }
+
+      // 이미 standard 자막이 존재하는 언어 스킵
+      const hasExisting = existingCaptions.some(c =>
+        normalizeLangCode(c.snippet?.language) === normYtTarget &&
+        c.snippet?.trackKind === 'standard'
+      );
+      if (hasExisting) {
+        log(`이미 번역된 자막 스킵: ${lang.name}`, LOG_LEVEL.INFO);
+        alreadyTranslated.push(lang.name);
+        return false;
+      }
+
       return true;
     });
+
+    // 이미 번역된 언어가 있으면 사용자에게 안내
+    if (alreadyTranslated.length > 0) {
+      broadcast({
+        type: MSG.TRANSLATION_PROGRESS,
+        langName: `💡 이미 ${alreadyTranslated.join(', ')} 언어로 번역된 자막이 있어 건너뜁니다. 소중한 API 토큰을 아꼈습니다 🎉`,
+        current: 0,
+        total: targetLangs.length
+      });
+    }
+
+    // 건너뛴 후 번역할 언어가 없으면 바로 완료 처리
+    if (targetLangs.length === 0) {
+      const tabIdBeforeReset = state.tabId;
+      resetState();
+      broadcast({ type: MSG.TRANSLATION_COMPLETE, count: 0, errors: [], allSkipped: true }, tabIdBeforeReset);
+      return;
+    }
 
     // 6. 병렬 번역 + 업로드 (3개씩 — 무료 티어 RPM 한도 대응)
     const chunks = chunkArray(targetLangs, 3);
     let completed = 0;
+
+    // 청크 기반 전체 진행률 계산
+    const totalChunksPerLang = Math.ceil(sourceSubtitles.length / CHUNK_SIZE);
+    const totalAllChunks     = targetLangs.length * totalChunksPerLang;
+    let   globalChunksDone   = 0;
 
     for (const chunk of chunks) {
       if (state.shouldStop) break;
@@ -240,8 +278,8 @@ async function runTranslation(tabId, settings) {
             type: MSG.TRANSLATION_PROGRESS,
             lang: langCode,
             langName: `[${lang.name}] 번역 중...`,
-            current: completed,          // 완료된 수 (아직 이 언어는 미완료)
-            total: targetLangs.length
+            current: globalChunksDone,
+            total: totalAllChunks
           });
 
           try {
@@ -251,7 +289,18 @@ async function runTranslation(tabId, settings) {
               model: settings.selectedModel,
               sourceLang: sourceLangName,
               targetLang: lang.name,
-              subtitles: sourceSubtitles
+              subtitles: sourceSubtitles,
+              onChunkProgress: (chunkDone, chunkTotal) => {
+                globalChunksDone++;
+                broadcast({
+                  type: MSG.TRANSLATION_PROGRESS,
+                  lang: langCode,
+                  langName: `[${lang.name}] 번역 중... (${chunkDone}/${chunkTotal} 청크)`,
+                  current: globalChunksDone,
+                  total: totalAllChunks,
+                  isChunkUpdate: true
+                });
+              }
             });
 
             // YouTube Captions API로 업로드
@@ -263,8 +312,8 @@ async function runTranslation(tabId, settings) {
               type: MSG.TRANSLATION_PROGRESS,
               lang: langCode,
               langName: `[${lang.name}] 완료 ✓`,
-              current: completed,
-              total: targetLangs.length,
+              current: globalChunksDone,
+              total: totalAllChunks,
               done: true
             });
 
@@ -287,12 +336,13 @@ async function runTranslation(tabId, settings) {
     const successCount = targetLangs.length - errors.length;
     log(`번역 완료 — 성공: ${successCount}개, 실패: ${errors.length}개`, LOG_LEVEL.INFO);
 
-    // resetState()를 broadcast보다 먼저 호출해야 한다.
-    // broadcast → addLog → toggle → syncRunningState() → GET_STATUS 사이에
-    // state.isRunning이 true이면 content-script가 다시 running 상태로 복구하는
-    // 레이스 컨디션이 발생하기 때문.
+    // tabId를 저장한 뒤 resetState()를 먼저 호출해 레이스 컨디션을 방지한다.
+    // (resetState → broadcast 순서로 GET_STATUS가 idle을 반환하게 됨)
+    // broadcast()에 savedTabId를 명시적으로 전달해야 한다.
+    // resetState()가 state.tabId를 null로 초기화하기 때문.
+    const savedTabId = state.tabId;
     resetState();
-    broadcast({ type: MSG.TRANSLATION_COMPLETE, count: successCount, errors });
+    broadcast({ type: MSG.TRANSLATION_COMPLETE, count: successCount, errors }, savedTabId);
 
     // 실패 언어가 있으면 Worker 경유 텔레그램 알림
     await reportTranslationResult({
@@ -304,12 +354,13 @@ async function runTranslation(tabId, settings) {
 
   } catch (err) {
     log(err.message, LOG_LEVEL.ERROR, { action: 'run_translation' });
-    resetState(); // 레이스 컨디션 방지를 위해 broadcast 전 호출
-    await reportError(err, { action: 'run_translation', tabId });
+    const savedTabId = state.tabId; // resetState() 전에 저장
+    resetState();
+    await reportError(err, { action: 'run_translation', tabId: savedTabId });
     broadcast({
       type: MSG.TRANSLATION_ERROR,
       error: friendlyError(err)
-    });
+    }, savedTabId);
 
   } finally {
     // try/catch 각 경로에서 이미 resetState() 호출됨.

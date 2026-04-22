@@ -27,6 +27,7 @@ body {
 .container {
   max-width: 640px;
   margin: 40px auto;
+  margin-bottom: 100px; /* 플로팅 저장 버튼 영역 확보 */
   background: var(--bg);
   border-radius: 12px;
   padding: 32px;
@@ -213,10 +214,25 @@ h1 {
 
 /* Actions */
 .actions {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-top: 24px;
+  justify-content: center;
+  gap: 16px;
+  padding: 14px 24px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -2px 12px rgba(0, 0, 0, 0.08);
+  z-index: 100;
+}
+
+.actions .btn-primary {
+  min-width: 160px;
 }
 
 .btn {
@@ -235,6 +251,11 @@ h1 {
 }
 .btn-primary:hover {
   background: var(--primary-hover);
+}
+.btn-primary:disabled {
+  background: #b0b0b0;
+  cursor: not-allowed;
+  opacity: 0.7;
 }
 
 .save-status {
