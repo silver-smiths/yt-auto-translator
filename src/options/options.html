@@ -288,22 +288,81 @@
           <input type="radio" name="translationMode" id="modeCredits" value="credits">
           <div class="mode-option-body">
             <div class="mode-option-title">✨ 크레딧 사용</div>
-            <div class="mode-option-desc">API 키 없이 크레딧으로 번역. 사전 충전 후 실사용량만큼 차감됩니다.</div>
+            <div class="mode-option-desc">API 키 없이 크레딧으로 번역. 최대 속도 · 최대 26개 언어 동시 번역.</div>
           </div>
         </label>
       </div>
 
-      <!-- 크레딧 잔액 카드 -->
-      <div id="creditSection" style="display:none; margin-top:14px;">
-        <div class="credit-balance-card">
-          <div class="credit-balance-info">
-            <div class="credit-balance-label">현재 잔액</div>
-            <div class="credit-balance-amount" id="creditBalance">—</div>
-            <div class="credit-balance-tier" id="creditTier"></div>
+      <!-- 모드별 패널 (같은 자리에서 교체) -->
+      <div class="mode-panel-wrap">
+
+        <!-- 내 API 키 패널 -->
+        <div id="apiKeyPanel" class="mode-panel visible">
+          <div class="guide-card" id="guideCard">
+            <div class="guide-header">
+              <div class="guide-header-icon">🆓</div>
+              <div class="guide-header-text">
+                <h3 data-i18n="guideCardTitle">API 키가 필요합니다 — 무료로 30초 안에 발급 가능!</h3>
+                <p data-i18n="guideCardSubtitle">신용카드 없이, Google 계정만 있으면 OK</p>
+              </div>
+            </div>
+            <div class="guide-steps">
+              <div class="guide-step">
+                <div class="step-num">1</div>
+                <div class="step-content">
+                  <strong data-i18n="guideStep1Title">아래 버튼으로 Google AI Studio 접속</strong>
+                  <span data-i18n="guideStep1Desc">Google 계정이 있다면 바로 입장 가능합니다.</span>
+                </div>
+                <div class="step-emoji">🌐</div>
+              </div>
+              <div class="guide-step">
+                <div class="step-num">2</div>
+                <div class="step-content">
+                  <strong data-i18n="guideStep2Title">"API 키 만들기" 클릭</strong>
+                  <span data-i18n="guideStep2Desc">우측 상단 또는 중앙에 파란 버튼이 있습니다.</span>
+                </div>
+                <div class="step-emoji">✅</div>
+              </div>
+              <div class="guide-step">
+                <div class="step-num">3</div>
+                <div class="step-content">
+                  <strong data-i18n="guideStep3Title">키 복사 후 아래에 붙여넣기</strong>
+                  <span data-i18n-html="guideStep3Desc">생성된 키는 <code>AIzaSy...</code> 형태입니다.</span>
+                </div>
+                <div class="step-emoji">📋</div>
+              </div>
+            </div>
+            <a href="https://aistudio.google.com/apikey" target="_blank" class="btn-aistudio">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M19 19H5V5h7V3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/></svg>
+              <span data-i18n="guideAiStudioBtn">Google AI Studio에서 무료 API 키 발급 →</span>
+            </a>
+            <p class="guide-note" data-i18n="guideNote">🔒 발급한 키는 이 기기에만 저장되며, 외부 서버로 전송되지 않습니다.</p>
           </div>
-          <button class="btn-topup" id="btnTopup">충전하기</button>
+          <div class="api-input-row">
+            <input type="password" id="apiKey" class="input" data-i18n-placeholder="apiKeyPlaceholder" placeholder="여기에 API 키를 붙여넣으세요">
+            <button class="btn-icon" id="btnToggleKey" title="표시/숨기기">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle></svg>
+            </button>
+          </div>
+          <div class="key-status empty" id="keyStatus">
+            <div class="key-status-dot"></div>
+            <span id="keyStatusText" data-i18n="keyStatusEmpty">키가 입력되지 않았습니다.</span>
+          </div>
+          <button class="guide-toggle" id="guideToggle" style="display:none;" data-i18n="guideToggleText">📖 API 키 발급 방법 다시 보기</button>
         </div>
-        <p class="hint-small" style="margin-top:6px;">잔액 소진 시 번역이 중단됩니다. 미리 충전해 두세요.</p>
+
+        <!-- 크레딧 패널 -->
+        <div id="creditPanel" class="mode-panel hidden">
+          <div class="credit-balance-card">
+            <div class="credit-balance-info">
+              <div class="credit-balance-label">크레딧 잔액</div>
+              <div class="credit-balance-amount" id="creditBalance">—</div>
+            </div>
+            <button class="btn-topup" id="btnTopup">충전하기</button>
+          </div>
+          <p class="hint-small" style="margin-top:8px;">잔액 소진 시 번역이 중단됩니다. 미리 충전해 두세요.</p>
+        </div>
+
       </div>
     </section>
 
@@ -455,60 +514,29 @@
          번역 대상 언어
     ════════════════════════════ -->
     <section class="section">
-      <label class="label" data-i18n="optionsTargetLangs">번역할 언어 선택</label>
-      <div class="lang-controls">
-        <button class="btn-small" id="btnSelectAll" data-i18n="optionsSelectAll">전체 선택</button>
-        <button class="btn-small" id="btnDeselectAll" data-i18n="optionsDeselectAll">전체 해제</button>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <label class="label" style="margin-bottom:0;" data-i18n="optionsTargetLangs">번역할 언어 선택</label>
+        <div style="display:flex; gap:6px;">
+          <button class="btn-small" id="btnSelectAll" data-i18n="optionsSelectAll" disabled>전체 선택</button>
+          <button class="btn-small" id="btnDeselectAll" data-i18n="optionsDeselectAll">전체 해제</button>
+        </div>
+      </div>
+      <div id="langModeNotice" class="notice notice-warn" style="margin-bottom:10px;">
+        ⚠️ 내 API 키 모드에서는 한 번에 <strong>1개 언어</strong>만 번역할 수 있습니다.
       </div>
       <div class="lang-grid" id="langGrid"></div>
     </section>
 
     <!-- ════════════════════════════
-         Gemini 요금제 & 번역 속도
+         번역 속도
     ════════════════════════════ -->
     <section class="section">
-      <label class="label" data-i18n="optionsTierLabel">⚡ Gemini API 요금제</label>
-      <p class="hint-small" style="margin-bottom:12px;" data-i18n="optionsTierHint">
-        사용 중인 AI Studio 요금제를 선택하세요. 요청 속도가 자동으로 조정됩니다.
-      </p>
-
-      <div class="tier-radio-group">
-        <label class="tier-option" id="tierFreeLabel">
-          <input type="radio" name="geminiTier" id="tierFree" value="free">
-          <div class="tier-option-body">
-            <div class="tier-option-title" data-i18n="optionsTierFreeTitle">🆓 무료 티어</div>
-            <div class="tier-option-desc" data-i18n="optionsTierFreeDesc">AI Studio 무료 플랜 · 자동으로 5초 간격(~12 RPM) 적용</div>
-          </div>
-        </label>
-        <label class="tier-option" id="tierPaidLabel">
-          <input type="radio" name="geminiTier" id="tierPaid" value="paid">
-          <div class="tier-option-body">
-            <div class="tier-option-title" data-i18n="optionsTierPaidTitle">💳 유료 티어</div>
-            <div class="tier-option-desc" data-i18n="optionsTierPaidDesc">Pay-as-you-go / Billing 설정 완료 · 속도를 직접 선택</div>
-          </div>
-        </label>
+      <label class="label">⚡ 번역 속도</label>
+      <div class="speed-display">
+        <span class="speed-badge" id="speedBadge">무료 티어 고정</span>
+        <span class="speed-desc" id="speedDesc">느림 · 5초 간격 (~12 RPM)</span>
       </div>
-
-      <!-- 무료 티어 안내 -->
-      <div id="freeTierNotice" class="notice notice-warn" style="margin-top:12px;" data-i18n-html="optionsFreeTierNotice">
-        <strong>⏱ 무료 티어 번역 속도 안내</strong><br>
-        요청 간격이 <strong>5초</strong>로 자동 설정됩니다. 여러 언어를 동시에 번역하면 완료까지 수 분이 걸릴 수 있습니다.<br>
-        예: 5개 언어 × 10분 영상 → 약 2~4분 소요 / 일일 최대 1,500건 요청
-      </div>
-
-      <!-- 유료 티어 안내 -->
-      <div id="paidTierNotice" class="notice notice-info" style="display:none; margin-top:12px;" data-i18n-html="optionsPaidTierNotice">
-      </div>
-
-      <!-- 유료 티어 속도 선택 -->
-      <div id="paidSpeedSection" style="display:none; margin-top:12px;">
-        <label class="label" style="font-size:13px; margin-bottom:6px;" data-i18n="optionsPaidSpeedLabel">번역 속도 선택</label>
-        <select id="paidSpeed" class="select">
-          <option value="fast" data-i18n="optionsSpeedFast">🚀 빠름 — 0.5초 간격 (~120 RPM)</option>
-          <option value="normal" selected data-i18n="optionsSpeedNormal">⚡ 보통 — 2초 간격 (~30 RPM)</option>
-          <option value="slow" data-i18n="optionsSpeedSlow">🐢 느리게 — 5초 간격 (~12 RPM)</option>
-        </select>
-      </div>
+      <p class="hint-small" id="speedHint" style="margin-top:6px;">더 빠른 번역을 원하면 크레딧 모드를 사용하세요.</p>
     </section>
 
     <!-- ════════════════════════════

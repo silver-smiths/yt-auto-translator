@@ -34,10 +34,6 @@ function applyI18n() {
 // =============================================
 const modeMyKey        = document.getElementById('modeMyKey');
 const modeCredits      = document.getElementById('modeCredits');
-const creditSection    = document.getElementById('creditSection');
-const creditBalance    = document.getElementById('creditBalance');
-const creditTierEl     = document.getElementById('creditTier');
-const apiKeySection    = document.getElementById('apiKeySection');
 const btnTopup         = document.getElementById('btnTopup');
 const apiKeyInput      = document.getElementById('apiKey');
 const btnToggleKey     = document.getElementById('btnToggleKey');
@@ -69,22 +65,51 @@ const btnClearLogs     = document.getElementById('btnClearLogs');
 // =============================================
 function applyModeUI(mode) {
   const isCredits = mode === 'credits';
-  creditSection.style.display = isCredits ? 'block' : 'none';
-  apiKeySection.style.display = isCredits ? 'none'  : 'block';
+
+  // 패널 교체 (같은 자리에서 opacity 전환)
+  document.getElementById('apiKeyPanel').className  = 'mode-panel ' + (isCredits ? 'hidden' : 'visible');
+  document.getElementById('creditPanel').className  = 'mode-panel ' + (isCredits ? 'visible' : 'hidden');
+
+  // 속도 표시
+  const speedBadge = document.getElementById('speedBadge');
+  const speedDesc  = document.getElementById('speedDesc');
+  const speedHint  = document.getElementById('speedHint');
+  if (isCredits) {
+    speedBadge.className   = 'speed-badge fast';
+    speedBadge.textContent = '최대 속도';
+    speedDesc.textContent  = '유료 플랜 · 병렬 처리';
+    speedHint.textContent  = '크레딧 소진 속도가 빠를 수 있습니다.';
+  } else {
+    speedBadge.className   = 'speed-badge slow';
+    speedBadge.textContent = '무료 티어 고정';
+    speedDesc.textContent  = '느림 · 5초 간격 (~12 RPM)';
+    speedHint.textContent  = '더 빠른 번역을 원하면 크레딧 모드를 사용하세요.';
+  }
+
+  // 언어 모드 안내 + 전체 선택 버튼
+  const langNotice   = document.getElementById('langModeNotice');
+  const btnSelectAll = document.getElementById('btnSelectAll');
+  if (isCredits) {
+    langNotice.className   = 'notice notice-info';
+    langNotice.innerHTML   = '✅ 최대 <strong>26개 언어</strong>를 동시에 번역합니다.';
+    btnSelectAll.disabled  = false;
+  } else {
+    langNotice.className   = 'notice notice-warn';
+    langNotice.innerHTML   = '⚠️ 내 API 키 모드에서는 한 번에 <strong>1개 언어</strong>만 번역할 수 있습니다.';
+    btnSelectAll.disabled  = true;
+  }
+
   if (isCredits) loadCreditBalance();
 }
 
 async function loadCreditBalance() {
-  creditBalance.textContent = '조회 중...';
-  creditTierEl.textContent  = '';
+  const balEl = document.getElementById('creditBalance');
+  balEl.textContent = '조회 중...';
   try {
     const data = await getCredits();
-    creditBalance.textContent = `$${data.balance.toFixed(4)}`;
-    const tierLabel = data.tier === 'heavy' ? '헤비 (×1.1)' : data.tier === 'standard' ? '스탠다드 (×1.2)' : '라이트 (×1.3)';
-    creditTierEl.textContent  = `티어: ${tierLabel}`;
+    balEl.textContent = `$${data.balance.toFixed(2)}`;
   } catch (e) {
-    creditBalance.textContent = '조회 실패';
-    creditTierEl.textContent  = 'Google 계정 연동 후 다시 시도해주세요.';
+    balEl.textContent = '조회 실패';
   }
 }
 
@@ -264,8 +289,21 @@ function updateSaveButton() {
   }
 }
 
-// 언어 체크박스 변경 시 저장 버튼 상태 갱신 (이벤트 위임)
-langGrid.addEventListener('change', updateSaveButton);
+// 언어 체크박스 변경 시 처리 (이벤트 위임)
+langGrid.addEventListener('change', (e) => {
+  const isCredits = modeCredits.checked;
+  if (!isCredits && e.target.type === 'checkbox' && e.target.checked) {
+    // API 키 모드: 1개만 허용 — 다른 체크박스 모두 해제
+    langGrid.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+      if (cb !== e.target) {
+        cb.checked = false;
+        cb.closest('.lang-item')?.classList.remove('selected');
+      }
+    });
+    e.target.closest('.lang-item')?.classList.add('selected');
+  }
+  updateSaveButton();
+});
 
 // =============================================
 // 전체 선택 / 해제
