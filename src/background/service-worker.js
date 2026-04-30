@@ -8,6 +8,7 @@
 import { MSG, TARGET_LANGUAGES } from '../lib/constants.js';
 import { loadSettings } from '../lib/storage.js';
 import { translateSubtitles, configureRateLimit, CHUNK_SIZE } from '../lib/llm-api.js';
+import { translateSubtitlesBackend, CHUNK_SIZE_BACKEND, createJob, updateJob } from '../lib/backend-api.js';
 import { reportError, reportTranslationResult, installGlobalErrorHandler, log, LOG_LEVEL, initSentry } from '../lib/logger.js';
 import {
   authorizeYouTube,
@@ -283,25 +284,60 @@ async function runTranslation(tabId, settings) {
           });
 
           try {
-            // 번역 (Gemini API Key 방식)
-            const translated = await translateSubtitles({
-              apiKey: settings.geminiApiKey || '',
-              model: settings.selectedModel,
-              sourceLang: sourceLangName,
-              targetLang: lang.name,
-              subtitles: sourceSubtitles,
-              onChunkProgress: (chunkDone, chunkTotal) => {
-                globalChunksDone++;
-                broadcast({
-                  type: MSG.TRANSLATION_PROGRESS,
-                  lang: langCode,
-                  langName: `[${lang.name}] 번역 중... (${chunkDone}/${chunkTotal} 청크)`,
-                  current: globalChunksDone,
-                  total: totalAllChunks,
-                  isChunkUpdate: true
+            // ── 번역 방식에 따라 분기 ──────────────────
+            const isCreditsMode = settings.translationMode === 'credits';
+            let translated;
+
+            if (isCreditsMode) {
+              // 크레딧 모드: 백엔드 Gemini 프록시 경유
+              if (!state._jobId) {
+                const job = await createJob({
+                  videoId, jobType: 'subtitles',
+                  sourceLang: sourceLangName,
+                  targetLangs: targetLangs,
+                  model: settings.selectedModel
                 });
+                state._jobId = job.job_id;
               }
-            });
+              translated = await translateSubtitlesBackend({
+                jobId:      state._jobId,
+                model:      settings.selectedModel,
+                sourceLang: sourceLangName,
+                targetLang: lang.name,
+                subtitles:  sourceSubtitles,
+                onChunkProgress: (chunkDone, chunkTotal) => {
+                  globalChunksDone++;
+                  broadcast({
+                    type: MSG.TRANSLATION_PROGRESS,
+                    lang: langCode,
+                    langName: `[${lang.name}] 번역 중... (${chunkDone}/${chunkTotal} 청크)`,
+                    current: globalChunksDone,
+                    total: totalAllChunks,
+                    isChunkUpdate: true
+                  });
+                }
+              });
+            } else {
+              // 내 API 키 모드: 직접 Gemini 호출
+              translated = await translateSubtitles({
+                apiKey: settings.geminiApiKey || '',
+                model: settings.selectedModel,
+                sourceLang: sourceLangName,
+                targetLang: lang.name,
+                subtitles: sourceSubtitles,
+                onChunkProgress: (chunkDone, chunkTotal) => {
+                  globalChunksDone++;
+                  broadcast({
+                    type: MSG.TRANSLATION_PROGRESS,
+                    lang: langCode,
+                    langName: `[${lang.name}] 번역 중... (${chunkDone}/${chunkTotal} 청크)`,
+                    current: globalChunksDone,
+                    total: totalAllChunks,
+                    isChunkUpdate: true
+                  });
+                }
+              });
+            }
 
             // YouTube Captions API로 업로드
             await uploadCaption(videoId, lang.ytCode, subtitlesToSRT(translated), existingCaptions);
@@ -340,6 +376,11 @@ async function runTranslation(tabId, settings) {
     // (resetState → broadcast 순서로 GET_STATUS가 idle을 반환하게 됨)
     // broadcast()에 savedTabId를 명시적으로 전달해야 한다.
     // resetState()가 state.tabId를 null로 초기화하기 때문.
+    // 크레딧 모드: job 완료 상태 업데이트
+    if (settings.translationMode === 'credits' && state._jobId) {
+      await updateJob(state._jobId, errors.length > 0 ? 'failed' : 'completed').catch(() => {});
+    }
+
     const savedTabId = state.tabId;
     resetState();
     broadcast({ type: MSG.TRANSLATION_COMPLETE, count: successCount, errors }, savedTabId);

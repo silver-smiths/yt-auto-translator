@@ -272,6 +272,44 @@
     <h1 data-i18n="optionsTitle">⚙️ YouTube Auto-Translator 설정</h1>
 
     <!-- ════════════════════════════
+         번역 방식 선택
+    ════════════════════════════ -->
+    <section class="section">
+      <label class="label">🔧 번역 방식</label>
+      <div class="mode-options">
+        <label class="mode-option" id="modeMyKeyLabel">
+          <input type="radio" name="translationMode" id="modeMyKey" value="my_key">
+          <div class="mode-option-body">
+            <div class="mode-option-title">내 API 키 사용</div>
+            <div class="mode-option-desc">직접 발급한 Gemini API 키로 번역. 비용은 내 Google 계정에 청구됩니다.</div>
+          </div>
+        </label>
+        <label class="mode-option" id="modeCreditsLabel">
+          <input type="radio" name="translationMode" id="modeCredits" value="credits">
+          <div class="mode-option-body">
+            <div class="mode-option-title">✨ 크레딧 사용</div>
+            <div class="mode-option-desc">API 키 없이 크레딧으로 번역. 사전 충전 후 실사용량만큼 차감됩니다.</div>
+          </div>
+        </label>
+      </div>
+
+      <!-- 크레딧 잔액 카드 -->
+      <div id="creditSection" style="display:none; margin-top:14px;">
+        <div class="credit-balance-card">
+          <div class="credit-balance-info">
+            <div class="credit-balance-label">현재 잔액</div>
+            <div class="credit-balance-amount" id="creditBalance">—</div>
+            <div class="credit-balance-tier" id="creditTier"></div>
+          </div>
+          <button class="btn-topup" id="btnTopup">충전하기</button>
+        </div>
+        <p class="hint-small" style="margin-top:6px;">잔액 소진 시 번역이 중단됩니다. 미리 충전해 두세요.</p>
+      </div>
+    </section>
+
+    <hr class="section-divider">
+
+    <!-- ════════════════════════════
          사용 방법 가이드
     ════════════════════════════ -->
     <details class="how-to-card">
@@ -318,7 +356,7 @@
     <!-- ════════════════════════════
          Gemini API 키 섹션
     ════════════════════════════ -->
-    <section class="section api-input-section">
+    <section class="section api-input-section" id="apiKeySection">
       <label class="label" data-i18n="apiKeyLabel">🔑 Gemini API 키</label>
 
       <!-- 발급 가이드 카드 (키가 없을 때 기본 노출) -->

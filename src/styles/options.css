@@ -297,6 +297,38 @@ h1 {
   border: 1px solid #333;
 }
 
+/* ── 번역 방식 선택 ── */
+.mode-options { display: flex; flex-direction: column; gap: 8px; }
+
+.mode-option {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 12px 14px; border: 1px solid var(--border);
+  border-radius: var(--radius); cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.mode-option:has(input:checked) { border-color: var(--primary); background: #f0f5ff; }
+.mode-option input[type="radio"] { margin-top: 3px; flex-shrink: 0; accent-color: var(--primary); }
+.mode-option-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 2px; }
+.mode-option-desc  { font-size: 11px; color: var(--text-secondary); line-height: 1.5; }
+
+/* ── 크레딧 잔액 카드 ── */
+.credit-balance-card {
+  display: flex; align-items: center; justify-content: space-between;
+  background: #f0f5ff; border: 1px solid #c5d8fb;
+  border-radius: var(--radius); padding: 14px 16px;
+}
+.credit-balance-label  { font-size: 11px; color: var(--text-secondary); margin-bottom: 2px; }
+.credit-balance-amount { font-size: 22px; font-weight: 700; color: var(--primary); }
+.credit-balance-tier   { font-size: 11px; color: var(--text-secondary); margin-top: 2px; }
+
+.btn-topup {
+  padding: 9px 20px; background: var(--primary); color: #fff;
+  border: none; border-radius: var(--radius);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  transition: background 0.2s; white-space: nowrap;
+}
+.btn-topup:hover { background: var(--primary-hover); }
+
 /* ── 요금제 라디오 그룹 ── */
 .tier-radio-group {
   display: flex;

@@ -1,9 +1,10 @@
 /**
- * Options Page Controller — Gemini API Key 전용
+ * Options Page Controller
  */
 import { TARGET_LANGUAGES, GEMINI_CONFIG } from '../lib/constants.js';
 import { loadSettings, saveSettings } from '../lib/storage.js';
 import { installGlobalErrorHandler, getLogs, clearLogs } from '../lib/logger.js';
+import { getCredits } from '../lib/backend-api.js';
 
 installGlobalErrorHandler('options');
 
@@ -31,6 +32,13 @@ function applyI18n() {
 // =============================================
 // DOM 요소
 // =============================================
+const modeMyKey        = document.getElementById('modeMyKey');
+const modeCredits      = document.getElementById('modeCredits');
+const creditSection    = document.getElementById('creditSection');
+const creditBalance    = document.getElementById('creditBalance');
+const creditTierEl     = document.getElementById('creditTier');
+const apiKeySection    = document.getElementById('apiKeySection');
+const btnTopup         = document.getElementById('btnTopup');
 const apiKeyInput      = document.getElementById('apiKey');
 const btnToggleKey     = document.getElementById('btnToggleKey');
 const guideCard        = document.getElementById('guideCard');
@@ -55,6 +63,38 @@ const saveStatus       = document.getElementById('saveStatus');
 const logPreview       = document.getElementById('logPreview');
 const btnCopyLogs      = document.getElementById('btnCopyLogs');
 const btnClearLogs     = document.getElementById('btnClearLogs');
+
+// =============================================
+// 번역 방식 전환
+// =============================================
+function applyModeUI(mode) {
+  const isCredits = mode === 'credits';
+  creditSection.style.display = isCredits ? 'block' : 'none';
+  apiKeySection.style.display = isCredits ? 'none'  : 'block';
+  if (isCredits) loadCreditBalance();
+}
+
+async function loadCreditBalance() {
+  creditBalance.textContent = '조회 중...';
+  creditTierEl.textContent  = '';
+  try {
+    const data = await getCredits();
+    creditBalance.textContent = `$${data.balance.toFixed(4)}`;
+    const tierLabel = data.tier === 'heavy' ? '헤비 (×1.1)' : data.tier === 'standard' ? '스탠다드 (×1.2)' : '라이트 (×1.3)';
+    creditTierEl.textContent  = `티어: ${tierLabel}`;
+  } catch (e) {
+    creditBalance.textContent = '조회 실패';
+    creditTierEl.textContent  = 'Google 계정 연동 후 다시 시도해주세요.';
+  }
+}
+
+modeMyKey.addEventListener('change',    () => applyModeUI('my_key'));
+modeCredits.addEventListener('change',  () => applyModeUI('credits'));
+
+btnTopup.addEventListener('click', () => {
+  // Portone 연동 후 실제 결제 페이지로 연결 예정
+  alert('결제 시스템 준비 중입니다. 곧 오픈됩니다!');
+});
 
 // =============================================
 // API Key 상태 UI 업데이트
@@ -181,12 +221,18 @@ tierPaid.addEventListener('change', () => applyTierUI('paid'));
 // =============================================
 async function loadAndApply() {
   const settings = await loadSettings();
+
+  // 번역 방식
+  const mode = settings.translationMode || 'my_key';
+  (mode === 'credits' ? modeCredits : modeMyKey).checked = true;
+  applyModeUI(mode);
+
   apiKeyInput.value = settings.geminiApiKey || '';
   updateKeyStatus(settings.geminiApiKey);
   buildModelOptions(settings.selectedModel);
   buildSourceLangSelect(settings.sourceLang);
   buildLangGrid(settings.targetLangs);
-  updateSaveButton(); // 저장된 언어가 없으면 버튼 비활성화
+  updateSaveButton();
 
   // 요금제 설정
   const tier = settings.geminiTier || 'free';
@@ -261,6 +307,7 @@ btnSave.addEventListener('click', async () => {
 
   const settings = {
     useGeminiOAuth: false,
+    translationMode: modeCredits.checked ? 'credits' : 'my_key',
     geminiApiKey,
     geminiTier: tierPaid.checked ? 'paid' : 'free',
     paidSpeed: paidSpeedSelect.value || 'normal',
