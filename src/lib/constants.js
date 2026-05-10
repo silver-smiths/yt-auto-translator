@@ -1,9 +1,14 @@
 /**
- * YouTube Auto-Translator Extension - Constants
- * Gemini 전용 (OAuth + API Key 양방식 지원)
+ * YTAT v2 — Constants
  */
 
-// 지원 언어 목록 (26개)
+// ── 번역 모드 ────────────────────────────────────────────────────────────────
+export const TRANSLATION_MODES = {
+  API_KEY: 'api_key',
+  CREDITS: 'credits',
+};
+
+// ── 지원 언어 (26개) ──────────────────────────────────────────────────────────
 export const TARGET_LANGUAGES = [
   { code: 'en',    name: 'English',                   nativeName: 'English',          ytCode: 'en'      },
   { code: 'zh-CN', name: 'Mandarin (Simplified)',      nativeName: '中文(简体)',        ytCode: 'zh-Hans' },
@@ -30,47 +35,49 @@ export const TARGET_LANGUAGES = [
   { code: 'ta',    name: 'Tamil',                     nativeName: 'தமிழ்',             ytCode: 'ta'      },
   { code: 'yue',   name: 'Yue Chinese (Cantonese)',   nativeName: '粵語',              ytCode: 'yue'     },
   { code: 'wuu',   name: 'Wu Chinese (Shanghainese)', nativeName: '吴语',              ytCode: 'wuu'     },
-  { code: 'ko',    name: 'Korean',                    nativeName: '한국어',            ytCode: 'ko'      }
+  { code: 'ko',    name: 'Korean',                    nativeName: '한국어',            ytCode: 'ko'      },
 ];
 
-// Gemini 전용 설정
-// ※ Google AI API 공식 표준 endpoint: v1beta
-//   - system_instruction 필드는 v1beta에서만 지원 (v1에서 400 오류 발생)
-//   - 모델 목록은 2026년 4월 기준 GA(정식) 출시 모델만 포함
+// ── Gemini 설정 ───────────────────────────────────────────────────────────────
 export const GEMINI_CONFIG = {
   baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
   models: [
     { id: 'gemini-2.5-flash',      name: 'Gemini 2.5 Flash (권장)' },
     { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash-Lite (경량)' },
-    { id: 'gemini-2.5-pro',        name: 'Gemini 2.5 Pro (고품질)' }
+    { id: 'gemini-2.5-pro',        name: 'Gemini 2.5 Pro (고품질)' },
   ],
   defaultModel: 'gemini-2.5-flash',
-  apiKeyUrl: 'https://aistudio.google.com/apikey'
+  apiKeyUrl: 'https://aistudio.google.com/apikey',
 };
 
-// Gemini API 요금제별 요청 속도 설정
-// intervalMs: 연속 요청 사이 최소 대기 시간
+// ── Rate Limit (API 키 모드 무료 티어 전용) ───────────────────────────────────
 export const RATE_CONFIGS = {
-  free:        { intervalMs: 5000,  rpmLabel: '~12 RPM', desc: '무료 티어 자동 (5초 간격)' },
-  paid_fast:   { intervalMs: 500,   rpmLabel: '~120 RPM', desc: '빠름 (0.5초 간격)' },
-  paid_normal: { intervalMs: 2000,  rpmLabel: '~30 RPM',  desc: '보통 (2초 간격)' },
-  paid_slow:   { intervalMs: 5000,  rpmLabel: '~12 RPM',  desc: '느리게 (5초 간격)' }
+  free: { intervalMs: 5000, rpmLabel: '~12 RPM', desc: '무료 티어 (5초 간격)' },
 };
 
-// 기본 설정값
+// ── 백엔드 API ────────────────────────────────────────────────────────────────
+export const API_BASE = 'https://yt-auto-translator-api.1009yjh.workers.dev';
+export const PAYMENT_URL = 'https://silver-smiths.com/project/ytat-credits.html';
+
+// ── 언어 수 기반 동적 청크 크기 (크레딧 모드) ─────────────────────────────────
+export function getChunkSize(langCount) {
+  if (langCount <= 3)  return 150;
+  if (langCount <= 8)  return 100;
+  if (langCount <= 15) return 80;
+  return 60;
+}
+
+// ── 기본 설정값 ───────────────────────────────────────────────────────────────
 export const DEFAULT_SETTINGS = {
-  useGeminiOAuth: false,    // true: Google OAuth / false: API Key
-  geminiApiKey: '',
-  geminiTier: 'free',       // 'free' | 'paid'
-  paidSpeed: 'normal',      // 'fast' | 'normal' | 'slow' (유료 선택 시)
-  selectedModel: 'gemini-2.5-flash',
-  sourceLang: 'ko',
-  targetLangs: TARGET_LANGUAGES.map(l => l.code).filter(c => c !== 'ko'),
-  delayMin: 1000,
-  delayMax: 3000
+  translationMode:  TRANSLATION_MODES.API_KEY,
+  geminiApiKey:     '',
+  selectedModel:    'gemini-2.5-flash',
+  sourceLang:       'auto',
+  targetLangs:      TARGET_LANGUAGES.map(l => l.code).filter(c => c !== 'ko'),
+  welcomeDismissed: false,
 };
 
-// 메시지 타입
+// ── 메시지 타입 ───────────────────────────────────────────────────────────────
 export const MSG = {
   START_TRANSLATION:    'START_TRANSLATION',
   STOP_TRANSLATION:     'STOP_TRANSLATION',
@@ -78,10 +85,11 @@ export const MSG = {
   TRANSLATION_COMPLETE: 'TRANSLATION_COMPLETE',
   TRANSLATION_ERROR:    'TRANSLATION_ERROR',
   GET_STATUS:           'GET_STATUS',
-  LOG_ERROR:            'LOG_ERROR'
+  LOG_ERROR:            'LOG_ERROR',
+  OPEN_OPTIONS:         'OPEN_OPTIONS',
 };
 
-// 번역 프롬프트 템플릿
+// ── 번역 프롬프트 (API 키 모드용) ─────────────────────────────────────────────
 export const TRANSLATION_PROMPT = `You are a professional subtitle translator.
 Your goal is to translate subtitles from {sourceLang} into {targetLang} accurately while maintaining the original meaning, tone, and subtitle style.
 
