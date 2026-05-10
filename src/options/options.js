@@ -23,14 +23,12 @@ const btnTopup         = document.getElementById('btnTopup');
 const modelSelectWrap  = document.getElementById('modelSelectWrap');
 const modelSelect      = document.getElementById('modelSelect');
 const modelFixed       = document.getElementById('modelFixed');
-const speedBadge       = document.getElementById('speedBadge');
-const speedDesc        = document.getElementById('speedDesc');
-const speedHint        = document.getElementById('speedHint');
 const sourceLang       = document.getElementById('sourceLang');
 const langGrid         = document.getElementById('langGrid');
 const langNotice       = document.getElementById('langNotice');
 const btnSelectAll     = document.getElementById('btnSelectAll');
 const btnDeselectAll   = document.getElementById('btnDeselectAll');
+const speedSection     = document.getElementById('speedSection');
 const btnSave          = document.getElementById('btnSave');
 const saveStatus       = document.getElementById('saveStatus');
 
@@ -94,10 +92,7 @@ function applyMode(mode) {
   modelFixed.style.display      = isCredits ? 'block' : 'none';
 
   if (isCredits) {
-    speedBadge.className = 'speed-badge badge-fast';
-    speedBadge.textContent = '최대 속도';
-    speedDesc.textContent  = '유료 플랜 · 병렬 처리';
-    speedHint.textContent  = '크레딧 소진 속도가 빠를 수 있습니다.';
+    speedSection.style.display = 'none';
 
     langNotice.className = 'notice notice-success';
     langNotice.innerHTML = '✅ 최대 <strong>26개 언어</strong>를 동시에 번역합니다.';
@@ -105,10 +100,7 @@ function applyMode(mode) {
 
     fetchCreditBalance();
   } else {
-    speedBadge.className = 'speed-badge badge-slow';
-    speedBadge.textContent = '무료 티어 고정';
-    speedDesc.textContent  = '느림 · 5초 간격 (~12 RPM)';
-    speedHint.textContent  = '더 빠른 번역을 원하면 크레딧 모드를 사용하세요.';
+    speedSection.style.display = '';
 
     langNotice.className = 'notice notice-warn';
     langNotice.innerHTML = '⚠️ 내 API 키 모드에서는 한 번에 <strong>1개 언어</strong>만 번역할 수 있습니다.';

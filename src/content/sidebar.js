@@ -1,4 +1,4 @@
-import { TRANSLATION_MODES, MSG, PAYMENT_URL } from '../lib/constants.js';
+import { TRANSLATION_MODES, MSG, PAYMENT_URL, API_BASE, TARGET_LANGUAGES } from '../lib/constants.js';
 import { loadSettings } from '../lib/storage.js';
 
 // ── 인라인 CSS (Shadow DOM 내부) ──────────────────────────────────────────────
@@ -345,6 +345,7 @@ function buildSidebarHTML() {
     <div class="s-chips" id="chips-section" style="display:none"></div>
 
     <div class="s-logs" id="log-feed"></div>
+    <div class="s-logs" id="onboard-feed" style="padding-top:0"></div>
 
     <div class="s-footer">
       <button class="btn-settings" id="btn-settings">⚙️ 설정</button>
@@ -453,8 +454,7 @@ async function loadCreditBalance() {
       });
     });
 
-    const apiBase = (await import('../lib/constants.js')).API_BASE;
-    const res = await fetch(`${apiBase}/credits`, {
+    const res = await fetch(`${API_BASE}/credits`, {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (res.ok) {
@@ -506,7 +506,7 @@ async function renderOnboardingCards() {
     dismissed.add('credits'); // 크레딧 모드면 크레딧 유도 카드 숨김
   }
 
-  const feed = shadow.getElementById('log-feed');
+  const feed = shadow.getElementById('onboard-feed');
   for (const card of ONBOARD_CARDS) {
     if (dismissed.has(card.id)) continue;
     feed.appendChild(buildOnboardCard(card));
@@ -593,6 +593,7 @@ function setRunning(running, targetLangs = []) {
 
     langChipState = {};
     targetLangs.forEach(code => { langChipState[code] = 'pending'; });
+    buildChipLabels(targetLangs);
     renderChips();
   } else {
     btn.className = 'btn-start';
@@ -603,13 +604,22 @@ function setRunning(running, targetLangs = []) {
   }
 }
 
+// code → nativeName 매핑 캐시
+const chipLabels = {};
+function buildChipLabels(codes) {
+  codes.forEach(code => {
+    const lang = TARGET_LANGUAGES.find(l => l.code === code);
+    chipLabels[code] = lang ? lang.nativeName : code;
+  });
+}
+
 function renderChips() {
   const section = shadow.getElementById('chips-section');
   section.innerHTML = '';
   Object.entries(langChipState).forEach(([code, state]) => {
     const chip = document.createElement('span');
     chip.className = `chip ${state}`;
-    chip.textContent = code;
+    chip.textContent = chipLabels[code] || code;
     section.appendChild(chip);
   });
 }
@@ -673,7 +683,10 @@ function setupMessageListener() {
     switch (msg.type) {
       case MSG.TRANSLATION_PROGRESS: {
         if (!isRunning) setRunning(true, msg.targetLangs || []);
-        if (msg.lang && langChipState[msg.lang] !== 'done') {
+        if (msg.langDone) {
+          langChipState[msg.langDone] = 'done';
+          renderChips();
+        } else if (msg.lang && langChipState[msg.lang] !== 'done') {
           langChipState[msg.lang] = 'active';
           renderChips();
         }
@@ -683,6 +696,9 @@ function setupMessageListener() {
       }
 
       case MSG.TRANSLATION_COMPLETE: {
+        // 완료된 언어 칩 done 처리
+        Object.keys(langChipState).forEach(code => { langChipState[code] = 'done'; });
+        renderChips();
         setRunning(false);
         const { successCount = 0, failCount = 0, timeSavedMs } = msg;
         addLog('success', 'SUCCESS',
