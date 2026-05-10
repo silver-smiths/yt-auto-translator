@@ -50,8 +50,10 @@
       "resources": [
         "assets/*",
         "src/styles/content.css",
+        "src/content/sidebar.js",
         "src/content/content-script.js",
         "src/lib/constants.js",
+        "src/lib/storage.js",
         "src/lib/logger.js"
       ],
       "matches": ["https://studio.youtube.com/*", "https://www.youtube.com/*"]
