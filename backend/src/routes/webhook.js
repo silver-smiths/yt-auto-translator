@@ -54,6 +54,19 @@ app.post('/portone', async (c) => {
     p_amount_usd: amountUsd
   });
 
+  // 텔레그램 결제 알림 🎉
+  const amountDisplay = payment.currency === 'KRW'
+    ? `₩${Number(payment.amount_paid).toLocaleString('ko-KR')}`
+    : `$${Number(payment.amount_paid).toFixed(2)}`;
+  const time = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+
+  await sendTelegram(c.env, env.TELEGRAM_PAYMENT_THREAD_ID,
+    `🎉 *[YTAT] 결제 완료!*\n\n` +
+    `💰 금액: ${amountDisplay} → *$${amountUsd.toFixed(2)}* 크레딧\n` +
+    `🪪 user\\_id: \`${payment.user_id}\`\n` +
+    `🕐 ${time}`
+  ).catch(() => {}); // 알림 실패가 결제 응답에 영향주면 안 됨
+
   return c.json({ ok: true });
 });
 
@@ -69,6 +82,29 @@ async function getPortoneToken(env) {
   });
   const data = await res.json();
   return data.response?.access_token;
+}
+
+// ── 텔레그램 메시지 전송 ──────────────────────────────────
+async function sendTelegram(env, threadId, text) {
+  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return;
+
+  const payload = {
+    chat_id:    env.TELEGRAM_CHAT_ID,
+    text,
+    parse_mode: 'Markdown',
+  };
+  if (threadId) payload.message_thread_id = parseInt(threadId, 10);
+
+  const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`Telegram API 오류: ${err.description || res.status}`);
+  }
 }
 
 export default app;
