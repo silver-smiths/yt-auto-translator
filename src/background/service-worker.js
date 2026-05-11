@@ -400,7 +400,10 @@ async function runTranslationCredits(tabId, settings) {
           for (const code of targetLangs) {
             langResults[code].push(...chunk.map(s => s.text));
           }
-          log(`청크 번역 실패: ${result.reason?.message}`, LOG_LEVEL.WARN);
+          const chunkErr = result.reason?.message || '알 수 없는 오류';
+          log(`청크 번역 실패: ${chunkErr}`, LOG_LEVEL.WARN);
+          broadcast({ type: MSG.TRANSLATION_ERROR, error: `청크 번역 실패 (원본 유지): ${chunkErr}` });
+          await reportError(result.reason || new Error(chunkErr), { action: 'chunk_translate', chunk: chunksCompleted });
         }
 
         chunksCompleted++;
@@ -454,9 +457,13 @@ async function runTranslationCredits(tabId, settings) {
     try {
       const updated = await fetchCredits();
       creditsRemaining = updated.balance;
-    } catch { /* 실패해도 완료 처리 */ }
+    } catch (err) {
+      log(`잔여 크레딧 조회 실패: ${err.message}`, LOG_LEVEL.WARN);
+    }
 
     const successCount = targetLangs.length - errors.length;
+    await reportTranslationResult({ videoId, errors, total: targetLangs.length, success: successCount });
+
     const savedTabId   = state.tabId;
     resetState();
     broadcast({
@@ -468,9 +475,11 @@ async function runTranslationCredits(tabId, settings) {
 
   } catch (err) {
     log(err.message, LOG_LEVEL.ERROR, { action: 'runTranslationCredits' });
+    await reportError(err, { action: 'runTranslationCredits' });
 
     if (jobId) {
-      await updateTranslationJob(jobId, { status: 'failed', error_message: err.message }).catch(() => {});
+      await updateTranslationJob(jobId, { status: 'failed', error_message: err.message })
+        .catch(e => log(`job 상태 업데이트 실패: ${e.message}`, LOG_LEVEL.WARN));
     }
 
     const savedTabId = state.tabId;
@@ -524,6 +533,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     chrome.runtime.openOptionsPage();
     sendResponse({ ok: true });
     return;
+  }
+
+  if (message.type === 'OPEN_TAB') {
+    chrome.tabs.create({ url: message.url });
+    sendResponse({ ok: true });
+    return;
+  }
+
+  if (message.type === 'GET_CREDITS') {
+    fetchCredits()
+      .then(data => sendResponse({ balance: data.balance }))
+      .catch(err => sendResponse({ balance: null, error: err.message }));
+    return true; // 비동기 응답
   }
 });
 

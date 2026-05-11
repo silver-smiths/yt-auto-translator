@@ -2,7 +2,7 @@ import { API_BASE } from './constants.js';
 
 function getToken() {
   return new Promise((resolve, reject) => {
-    chrome.identity.getAuthToken({ interactive: false }, (token) => {
+    chrome.identity.getAuthToken({ interactive: true }, (token) => {
       if (chrome.runtime.lastError || !token) reject(new Error('AUTH_FAILED'));
       else resolve(token);
     });

@@ -140,8 +140,8 @@ async function fetchCreditBalance() {
       headers: { Authorization: `Bearer ${token}` },
     });
     if (!res.ok) throw new Error('fetch');
-    const { credits } = await res.json();
-    creditBalance.textContent = `$${credits.toFixed(2)}`;
+    const { balance } = await res.json();
+    creditBalance.textContent = `$${balance.toFixed(2)}`;
   } catch {
     creditBalance.textContent = '조회 실패 (로그인 필요)';
   }

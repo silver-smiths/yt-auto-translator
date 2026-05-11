@@ -402,11 +402,11 @@ function bindSidebarEvents(sidebar) {
   });
 
   sidebar.querySelector('#btn-topup').addEventListener('click', () => {
-    chrome.tabs.create({ url: PAYMENT_URL });
+    chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: PAYMENT_URL });
   });
 
   sidebar.querySelector('#btn-settings').addEventListener('click', () => {
-    chrome.runtime.openOptionsPage();
+    chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS' });
   });
 
   sidebar.querySelector('#btn-cip-close').addEventListener('click', () => {
@@ -414,7 +414,7 @@ function bindSidebarEvents(sidebar) {
   });
 
   sidebar.querySelector('#btn-cip-topup').addEventListener('click', () => {
-    chrome.tabs.create({ url: PAYMENT_URL });
+    chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: PAYMENT_URL });
   });
 }
 
@@ -446,24 +446,12 @@ function updateModeStrip() {
 
 // ── 크레딧 잔액 조회 ──────────────────────────────────────────────────────────
 async function loadCreditBalance() {
-  try {
-    const token = await new Promise((resolve, reject) => {
-      chrome.identity.getAuthToken({ interactive: false }, (t) => {
-        if (chrome.runtime.lastError || !t) reject(new Error('auth'));
-        else resolve(t);
-      });
-    });
-
-    const res = await fetch(`${API_BASE}/credits`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      creditBalance = data.credits;
-    }
-  } catch {
-    creditBalance = null;
+  const res = await chrome.runtime.sendMessage({ type: 'GET_CREDITS' }).catch(err => ({ error: err.message }));
+  if (res?.error) {
+    console.error('[YTAT] 크레딧 조회 실패:', res.error);
+    addLog('error', 'ERROR', `크레딧 조회 실패: ${res.error}`);
   }
+  creditBalance = res?.balance ?? null;
   updateModeStrip();
 }
 
@@ -575,7 +563,7 @@ function startTranslation() {
     return;
   }
 
-  chrome.runtime.sendMessage({ type: MSG.START_TRANSLATION });
+  chrome.runtime.sendMessage({ type: MSG.START_TRANSLATION, settings });
 }
 
 // ── 번역 상태 UI ──────────────────────────────────────────────────────────────
