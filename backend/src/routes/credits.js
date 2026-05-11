@@ -53,7 +53,7 @@ app.post('/checkout', async (c) => {
       pg_provider: currency === 'KRW' ? 'toss' : 'stripe',
       amount_paid: amount,
       currency,
-      amount_usd:       currency === 'USD' ? amount : amount / 1350, // 고정 환율 (실서비스에선 실시간 환율 API 사용)
+      amount_usd:       currency === 'USD' ? amount : amount / 1350, // 고정 환율 — 한국 결제 혜택 반영 (실서비스에선 실시간 환율 API 사용)
       credits_granted:  0, // 웹훅 수신 후 업데이트
       status:     'pending'
     })
