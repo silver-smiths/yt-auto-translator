@@ -20,7 +20,7 @@ import {
 
 installGlobalErrorHandler('background');
 
-const MAX_CONCURRENT   = 20;
+const MAX_CONCURRENT   = 3; // Vercel 동시 호출 부담 감소 (3 × langBatches = 최대 9개 동시 호출)
 const MAX_LANGS_PER_CALL = 3; // Vercel Edge 25s 제한 내 완료 가능한 최대 언어 수
 
 // ── 유틸리티 ──────────────────────────────────────────────────────────────────
@@ -426,6 +426,7 @@ async function runTranslationCredits(tabId, settings) {
 
     // 6. 언어별 YouTube 업로드
     const errors = [];
+    let uploadedCount = 0;
     for (const code of targetLangs) {
       if (state.shouldStop) break;
 
@@ -449,6 +450,7 @@ async function runTranslationCredits(tabId, settings) {
           text: langResults[code][i] ?? s.text,
         }));
         await uploadCaption(videoId, lang.ytCode, subtitlesToSRT(translated), existingCaptions);
+        uploadedCount++;
         broadcast({
           type: MSG.TRANSLATION_PROGRESS,
           lang: code, langName: `[${lang.name}] 완료 ✓`,
@@ -474,7 +476,7 @@ async function runTranslationCredits(tabId, settings) {
       log(`잔여 크레딧 조회 실패: ${err.message}`, LOG_LEVEL.WARN);
     }
 
-    const successCount = targetLangs.length - errors.length;
+    const successCount = uploadedCount;
     await reportTranslationResult({ videoId, errors, total: targetLangs.length, success: successCount });
 
     const savedTabId   = state.tabId;
