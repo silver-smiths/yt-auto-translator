@@ -1,0 +1,15 @@
+name = "yt-auto-translator-api"
+main = "src/index.js"
+compatibility_date = "2024-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+ENVIRONMENT = "production"
+GEMINI_MODEL = "gemini-2.5-flash"
+
+# Secrets (wrangler secret put 으로 등록)
+# SUPABASE_URL
+# SUPABASE_SERVICE_ROLE_KEY
+# GEMINI_API_KEY           ← 개발자 소유 키
+# PORTONE_WEBHOOK_SECRET
+# EXCHANGE_RATE_API_KEY    ← KRW→USD 환율 (선택)

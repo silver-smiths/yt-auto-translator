@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="stylesheet" href="../styles/popup.css">
+</head>
+<body>
+  <div class="container launcher">
+    <!-- Header -->
+    <header class="header">
+      <img src="../../assets/icons/icon48.png" alt="Logo" class="logo" onerror="this.style.display='none'">
+      <div>
+        <h1 class="title">YT Auto-Translator</h1>
+        <p class="subtitle">YouTube Studio 자막 자동 번역</p>
+      </div>
+    </header>
+
+    <!-- Guide -->
+    <div class="launcher-guide">
+      <div class="guide-icon">🎬</div>
+      <p class="guide-text">
+        YouTube Studio의 동영상 편집 페이지에서<br>
+        오른쪽 사이드바를 열어 번역을 시작하세요.
+      </p>
+    </div>
+
+    <!-- Status Badge (현재 탭 상태) -->
+    <div class="tab-status" id="tabStatus">
+      <span class="tab-status-dot" id="tabStatusDot"></span>
+      <span class="tab-status-text" id="tabStatusText">확인 중...</span>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="launcher-actions">
+      <button class="btn btn-primary" id="btnOpenStudio">
+        YouTube Studio 열기 ↗
+      </button>
+    </div>
+
+    <!-- Footer -->
+    <div class="footer">
+      <button class="btn-link" id="btnSettings">⚙️ 설정</button>
+    </div>
+  </div>
+
+  <script src="popup.js" type="module"></script>
+</body>
+</html>

@@ -1,0 +1,842 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>사이드바 목업 — v2.0</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Noto Sans KR', sans-serif;
+      background: #e8e8e8;
+      padding: 32px;
+    }
+    .mockup-badge {
+      display: inline-block;
+      background: #fff3cd; border: 1px solid #ffc107;
+      color: #664d03; font-size: 12px;
+      padding: 4px 12px; border-radius: 99px; margin-bottom: 20px;
+    }
+    .frames-row { display: flex; gap: 24px; flex-wrap: wrap; align-items: flex-start; }
+    .frame-wrap { display: flex; flex-direction: column; gap: 8px; }
+    .frame-label { font-size: 11px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    /* 브라우저 프레임 */
+    .browser-frame {
+      width: 340px; height: 600px;
+      background: #f1f3f4; border-radius: 10px;
+      overflow: hidden; border: 1px solid #ccc;
+      display: flex; flex-direction: column; position: relative;
+    }
+    .browser-topbar {
+      background: #fff; border-bottom: 1px solid #ddd;
+      padding: 8px 12px; display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+    }
+    .browser-dots { display: flex; gap: 5px; }
+    .browser-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .browser-dot.red    { background: #ff5f57; }
+    .browser-dot.yellow { background: #febc2e; }
+    .browser-dot.green  { background: #28c840; }
+    .browser-url { flex: 1; background: #f1f3f4; border-radius: 4px; padding: 4px 10px; font-size: 11px; color: #666; }
+    .yt-studio-bg { flex: 1; background: #fff; display: flex; position: relative; overflow: hidden; }
+    .yt-nav {
+      width: 60px; background: #fff; border-right: 1px solid #e5e5e5;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 12px 0; gap: 16px; flex-shrink: 0;
+    }
+    .yt-nav-icon { width: 32px; height: 32px; background: #f0f0f0; border-radius: 6px; }
+    .yt-nav-icon.active { background: #e8f0fe; }
+    .yt-main { flex: 1; padding: 16px; overflow: hidden; }
+    .yt-content-bar { height: 14px; background: #f0f0f0; border-radius: 4px; margin-bottom: 10px; }
+    .yt-content-bar.short { width: 60%; }
+    .yt-content-bar.med   { width: 80%; }
+    .yt-video-thumb { width: 100%; height: 80px; background: #e0e0e0; border-radius: 6px; margin-bottom: 10px; }
+
+    /* 접힌 상태 탭 */
+    .toggle-tab {
+      position: absolute; top: 50%; transform: translateY(-50%);
+      right: 0; width: 36px; height: 44px;
+      background: #121212; border: none; border-radius: 8px 0 0 8px;
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      z-index: 10; box-shadow: -2px 0 8px rgba(0,0,0,0.3);
+    }
+    .toggle-tab img { width: 22px; height: 22px; border-radius: 4px; }
+
+    /* 사이드바 */
+    .sidebar {
+      position: absolute; top: 0; right: 0;
+      width: 260px; height: 100%;
+      background: #121212; color: rgba(255,255,255,0.87);
+      display: flex; flex-direction: column; font-size: 12px;
+      border-left: 1px solid rgba(255,255,255,0.08);
+    }
+
+    /* 헤더 */
+    .s-header {
+      padding: 12px 14px; border-bottom: 1px solid rgba(255,255,255,0.08);
+      display: flex; justify-content: space-between; align-items: center; flex-shrink: 0;
+    }
+    .s-header-left { display: flex; align-items: center; gap: 8px; }
+    .s-logo-img { width: 22px; height: 22px; border-radius: 5px; }
+    .s-title { font-size: 13px; font-weight: 600; }
+    .s-close { background: none; border: none; color: rgba(255,255,255,0.35); font-size: 18px; cursor: pointer; line-height: 1; }
+
+    /* ── 모드 스트립 (항상 같은 높이) ── */
+    .s-mode-strip {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 14px; flex-shrink: 0;
+      height: 38px; /* 고정 높이 */
+    }
+    /* API 키 모드 */
+    .s-mode-strip.apikey {
+      background: rgba(255,255,255,0.04);
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .s-mode-strip.apikey .strip-left { display: flex; align-items: center; gap: 5px; }
+    .s-mode-strip.apikey .strip-dot  { width: 6px; height: 6px; border-radius: 50%; background: #888; }
+    .s-mode-strip.apikey .strip-label { font-size: 11px; color: rgba(255,255,255,0.4); }
+    .s-mode-strip.apikey .strip-value { font-size: 12px; font-weight: 600; color: rgba(255,255,255,0.55); }
+    /* 크레딧 모드 */
+    .s-mode-strip.credits {
+      background: rgba(6,95,212,0.12);
+      border-bottom: 1px solid rgba(6,95,212,0.2);
+    }
+    .s-mode-strip.credits .strip-left { display: flex; align-items: center; gap: 5px; }
+    .s-mode-strip.credits .strip-dot  { width: 6px; height: 6px; border-radius: 50%; background: #4da3ff; }
+    .s-mode-strip.credits .strip-label { font-size: 11px; color: rgba(255,255,255,0.45); }
+    .s-mode-strip.credits .strip-value { font-size: 13px; font-weight: 700; color: #4da3ff; }
+    /* 크레딧 부족 */
+    .s-mode-strip.credits.low {
+      background: rgba(255,107,107,0.1);
+      border-bottom: 1px solid rgba(255,107,107,0.2);
+    }
+    .s-mode-strip.credits.low .strip-dot   { background: #ff6b6b; }
+    .s-mode-strip.credits.low .strip-label { color: #ff8a8a; }
+    .s-mode-strip.credits.low .strip-value { color: #ff6b6b; }
+    .s-mode-strip.credits.low .strip-btn   { color: #ff6b6b; border-color: rgba(255,107,107,0.3); }
+
+    .strip-btn {
+      font-size: 11px; color: #4da3ff;
+      background: none; border: 1px solid rgba(77,163,255,0.3);
+      border-radius: 4px; padding: 2px 8px; cursor: pointer;
+    }
+
+    /* 컨트롤 */
+    .s-control {
+      padding: 10px 14px; border-bottom: 1px solid rgba(255,255,255,0.08);
+      display: flex; gap: 8px; flex-shrink: 0;
+    }
+    .btn-start { flex:1; padding:9px 12px; background:#BB86FC; color:#000; border:none; border-radius:7px; font-size:12px; font-weight:600; cursor:pointer; }
+    .btn-stop  { flex:1; padding:9px 12px; background:#CF6679; color:#fff; border:none; border-radius:7px; font-size:12px; font-weight:600; cursor:pointer; }
+
+    /* 진행 바 */
+    .s-progress { padding:10px 14px; background:#1E1E1E; border-bottom:1px solid rgba(255,255,255,0.08); flex-shrink:0; }
+    .s-progress-info { display:flex; justify-content:space-between; font-size:11px; margin-bottom:7px; color:rgba(255,255,255,0.5); }
+    .s-bar-bg { height:5px; background:rgba(255,255,255,0.1); border-radius:3px; overflow:hidden; }
+    .s-bar-fill { height:100%; border-radius:3px; background:linear-gradient(90deg,#BB86FC,#03DAC6); }
+
+    /* 칩 */
+    .s-chips { padding:8px 14px; border-bottom:1px solid rgba(255,255,255,0.08); display:flex; flex-wrap:wrap; gap:4px; flex-shrink:0; }
+    .chip { padding:2px 8px; border-radius:99px; font-size:11px; font-weight:600; }
+    .chip.pending { background:rgba(255,255,255,0.08); color:rgba(255,255,255,0.35); }
+    .chip.active  { background:rgba(187,134,252,0.2); color:#BB86FC; }
+    .chip.done    { background:rgba(3,218,198,0.15); color:#03DAC6; }
+
+    /* 로그 */
+    .s-logs { flex:1; padding:10px; display:flex; flex-direction:column; gap:7px; overflow:hidden; }
+    .log-card { border-radius:7px; padding:8px 10px; border-left:3px solid; flex-shrink:0; }
+    .log-card.info    { background:rgba(255,255,255,0.03); border-color:#BB86FC; }
+    .log-card.success { background:rgba(255,255,255,0.03); border-color:#03DAC6; }
+    .log-card.error   { background:rgba(255,255,255,0.03); border-color:#CF6679; }
+    .log-card.upsell  { background:rgba(3,218,198,0.07);   border-color:#03DAC6; }
+    .log-top  { display:flex; justify-content:space-between; margin-bottom:3px; }
+    .log-type { font-size:9px; font-weight:700; letter-spacing:0.5px; }
+    .log-time { font-size:9px; color:rgba(255,255,255,0.3); }
+    .log-msg  { font-size:11px; color:rgba(255,255,255,0.7); line-height:1.5; }
+    .log-cta  { margin-top:6px; font-size:11px; color:#03DAC6; cursor:pointer; text-decoration:underline; text-underline-offset:2px; }
+
+    /* 온보딩 카드 */
+    .log-card.onboard-welcome { background:rgba(187,134,252,0.08); border-color:#BB86FC; }
+    .log-card.onboard-credits {
+      background: linear-gradient(135deg, rgba(3,218,198,0.08), rgba(6,95,212,0.10));
+      border-color: #03DAC6;
+    }
+    .credit-feature-row {
+      display: flex; align-items: flex-start; gap: 6px;
+      margin-top: 5px;
+    }
+    .credit-feature-icon { font-size: 11px; flex-shrink: 0; margin-top: 1px; }
+    .credit-feature-text { font-size: 11px; color: rgba(255,255,255,0.65); line-height: 1.4; }
+    .credit-feature-text strong { color: #03DAC6; }
+
+    /* 푸터 */
+    .s-footer { padding:8px 14px; border-top:1px solid rgba(255,255,255,0.08); display:flex; justify-content:center; flex-shrink:0; }
+    .btn-settings { background:none; border:1px solid rgba(255,255,255,0.1); color:rgba(255,255,255,0.45); border-radius:5px; padding:5px 16px; font-size:11px; cursor:pointer; }
+
+    /* ── 크레딧 모드 알아보기 패널 (하단 슬라이드 오버레이) ── */
+    .credit-info-panel {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      height: 82%;
+      background: #1a1a2e;
+      border-top: 1px solid rgba(77,163,255,0.3);
+      border-radius: 10px 10px 0 0;
+      display: flex; flex-direction: column;
+      z-index: 20;
+    }
+    .cip-handle {
+      width: 32px; height: 3px; background: rgba(255,255,255,0.15);
+      border-radius: 2px; margin: 8px auto 0;
+    }
+    .cip-header {
+      padding: 10px 14px 10px;
+      display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .cip-title { font-size: 13px; font-weight: 700; color: #4da3ff; }
+    .cip-close { background: none; border: none; color: rgba(255,255,255,0.3); font-size: 18px; cursor: pointer; line-height:1; }
+    .cip-body { flex: 1; padding: 10px 14px; overflow: hidden; display: flex; flex-direction: column; gap: 8px; }
+    .cip-compare {
+      background: rgba(255,255,255,0.03); border-radius: 8px; overflow: hidden;
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    .cip-compare-head {
+      display: grid; grid-template-columns: 1fr 1fr 1fr;
+      padding: 7px 10px;
+      background: rgba(255,255,255,0.04);
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .cip-compare-head span { font-size: 10px; font-weight: 700; letter-spacing: 0.3px; color: rgba(255,255,255,0.4); text-align:center; }
+    .cip-compare-head span:first-child { text-align: left; }
+    .cip-compare-head .col-credit-h { color: #4da3ff; }
+    .cip-compare-row {
+      display: grid; grid-template-columns: 1fr 1fr 1fr;
+      padding: 7px 10px;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      align-items: center;
+    }
+    .cip-compare-row:last-child { border-bottom: none; }
+    .cip-compare-row span { font-size: 11px; text-align: center; }
+    .cip-compare-row .row-label { text-align: left; color: rgba(255,255,255,0.4); font-size: 10px; }
+    .cip-compare-row .val-poor { color: rgba(255,255,255,0.3); }
+    .cip-compare-row .val-good { color: #03DAC6; font-weight: 700; }
+    .cip-cta-wrap { padding: 10px 14px; border-top: 1px solid rgba(255,255,255,0.08); }
+    .cip-cta-btn {
+      width: 100%; padding: 10px;
+      background: #4da3ff; color: #fff;
+      border: none; border-radius: 7px;
+      font-size: 12px; font-weight: 700; cursor: pointer;
+    }
+
+    /* ── 사이드바 내 충전 모달 (다크 테마, 하단 시트) ── */
+    .sidebar-charge-overlay {
+      position: absolute; inset: 0;
+      background: rgba(0,0,0,0.65);
+      z-index: 30; display: flex; align-items: flex-end;
+    }
+    .scm-sheet {
+      width: 100%;
+      background: #1e1e2e;
+      border-radius: 12px 12px 0 0;
+      border-top: 1px solid rgba(255,255,255,0.1);
+      padding: 6px 14px 14px;
+    }
+    .scm-handle {
+      width: 32px; height: 3px; background: rgba(255,255,255,0.15);
+      border-radius: 2px; margin: 0 auto 10px;
+    }
+    .scm-title { font-size: 13px; font-weight: 700; color: rgba(255,255,255,0.9); margin-bottom: 2px; }
+    .scm-balance { font-size: 11px; color: rgba(255,255,255,0.35); margin-bottom: 12px; }
+    .scm-balance span { color: #4da3ff; font-weight: 600; }
+    .scm-label { font-size: 10px; font-weight: 600; color: rgba(255,255,255,0.35); letter-spacing: 0.4px; margin-bottom: 6px; }
+    .scm-amounts { display: grid; grid-template-columns: repeat(4,1fr); gap: 5px; margin-bottom: 6px; }
+    .scm-amt {
+      padding: 7px 3px; text-align: center;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 6px; font-size: 10px; font-weight: 600;
+      background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.5);
+    }
+    .scm-amt.sel { border-color: #4da3ff; background: rgba(77,163,255,0.15); color: #4da3ff; }
+    .scm-payment { display: flex; gap: 5px; margin-bottom: 10px; }
+    .scm-pay-opt {
+      flex: 1; padding: 7px 4px; text-align: center;
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 6px; font-size: 10px; font-weight: 600;
+      background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.45);
+    }
+    .scm-pay-opt.sel { border-color: #4da3ff; background: rgba(77,163,255,0.12); color: #4da3ff; }
+    .scm-summary {
+      background: rgba(255,255,255,0.04); border-radius: 7px;
+      padding: 9px 10px; margin-bottom: 10px;
+    }
+    .scm-row {
+      display: flex; justify-content: space-between;
+      font-size: 10px; color: rgba(255,255,255,0.35);
+      margin-bottom: 5px;
+    }
+    .scm-row:last-child { margin-bottom: 0; font-weight: 700; color: rgba(255,255,255,0.8); font-size: 11px; }
+    .scm-confirm {
+      width: 100%; padding: 11px;
+      background: #4da3ff; color: #fff;
+      border: none; border-radius: 7px;
+      font-size: 12px; font-weight: 700; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+<div class="mockup-badge">🎨 사이드바 목업 — v2.0</div>
+
+<div class="frames-row">
+
+  <!-- 최초 설치 상태 -->
+  <div class="frame-wrap">
+    <div class="frame-label">최초 설치 (온보딩)</div>
+    <div class="browser-frame">
+      <div class="browser-topbar">
+        <div class="browser-dots"><div class="browser-dot red"></div><div class="browser-dot yellow"></div><div class="browser-dot green"></div></div>
+        <div class="browser-url">studio.youtube.com/video/abc123/edit</div>
+      </div>
+      <div class="yt-studio-bg">
+        <div class="yt-nav"><div class="yt-nav-icon active"></div><div class="yt-nav-icon"></div></div>
+        <div class="yt-main"><div class="yt-video-thumb"></div><div class="yt-content-bar med"></div><div class="yt-content-bar short"></div></div>
+        <div class="sidebar">
+          <div class="s-header">
+            <div class="s-header-left">
+              <img class="s-logo-img" src="developer/web/chrome-extension-yt-auto-translator/assets/icons/icon48.png" alt="logo" onerror="this.style.display='none'">
+              <span class="s-title">YouTube 번역 AI</span>
+            </div>
+            <button class="s-close">&times;</button>
+          </div>
+          <div class="s-mode-strip apikey">
+            <div class="strip-left">
+              <div class="strip-dot"></div>
+              <span class="strip-label">번역 방식</span>
+              <span class="strip-value">내 API 키</span>
+            </div>
+          </div>
+          <div class="s-control"><button class="btn-start">▶  번역 시작</button></div>
+          <div class="s-logs">
+
+            <!-- 카드 1: 환영 -->
+            <div class="log-card onboard-welcome">
+              <div class="log-top">
+                <span class="log-type" style="color:#BB86FC">📌 공지</span>
+                <span class="log-time" style="cursor:pointer;color:rgba(255,255,255,0.3)">× 닫기</span>
+              </div>
+              <div class="log-msg" style="color:rgba(255,255,255,0.85);font-weight:500;">
+                자막 자동 번역&amp;등록기에 오신 걸 환영합니다 🎉
+              </div>
+            </div>
+
+            <!-- 카드 2: 사용법 -->
+            <div class="log-card info">
+              <div class="log-top">
+                <span class="log-type" style="color:#BB86FC">📌 공지</span>
+                <span class="log-time" style="cursor:pointer;color:rgba(255,255,255,0.3)">× 닫기</span>
+              </div>
+              <div class="log-msg">
+                영상 수정 페이지에서 <strong style="color:rgba(255,255,255,0.9)">▶ 번역 시작</strong> 버튼을 누르면 선택한 언어로 자막이 자동 번역·등록됩니다.
+              </div>
+            </div>
+
+            <!-- 카드 3: 설정 안내 -->
+            <div class="log-card info">
+              <div class="log-top">
+                <span class="log-type" style="color:#BB86FC">📌 공지</span>
+                <span class="log-time" style="cursor:pointer;color:rgba(255,255,255,0.3)">× 닫기</span>
+              </div>
+              <div class="log-msg">
+                먼저 <strong style="color:rgba(255,255,255,0.9)">⚙️ 설정</strong>에서 Gemini API 키를 입력하세요. Google AI Studio에서 무료로 발급받을 수 있습니다.
+              </div>
+            </div>
+
+            <!-- 카드 4: 크레딧 모드 소개 -->
+            <div class="log-card onboard-credits">
+              <div class="log-top">
+                <span class="log-type" style="color:#03DAC6">✨ 크레딧 모드</span>
+                <span class="log-time" style="cursor:pointer;color:rgba(255,255,255,0.3)">× 닫기</span>
+              </div>
+              <div class="log-msg" style="margin-bottom:6px;">API 키 없이 더 빠르고 강력하게 번역하세요.</div>
+              <div class="credit-feature-row">
+                <span class="credit-feature-icon">⚡</span>
+                <span class="credit-feature-text">무료 티어 대비 <strong>최대 10배 빠른</strong> 번역 속도</span>
+              </div>
+              <div class="credit-feature-row">
+                <span class="credit-feature-icon">🌍</span>
+                <span class="credit-feature-text"><strong>26개 언어 동시</strong> 번역 — 1개씩 기다릴 필요 없음</span>
+              </div>
+              <div class="credit-feature-row">
+                <span class="credit-feature-icon">🔑</span>
+                <span class="credit-feature-text">API 키 발급·관리 <strong>불필요</strong></span>
+              </div>
+              <div class="log-cta">크레딧 모드 시작하기 →</div>
+            </div>
+
+          </div>
+          <div class="s-footer"><button class="btn-settings">⚙️ 설정</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 0. 접힌 상태 -->
+  <div class="frame-wrap">
+    <div class="frame-label">0. 접힌 상태</div>
+    <div class="browser-frame">
+      <div class="browser-topbar">
+        <div class="browser-dots"><div class="browser-dot red"></div><div class="browser-dot yellow"></div><div class="browser-dot green"></div></div>
+        <div class="browser-url">studio.youtube.com/video/abc123/edit</div>
+      </div>
+      <div class="yt-studio-bg">
+        <div class="yt-nav"><div class="yt-nav-icon active"></div><div class="yt-nav-icon"></div><div class="yt-nav-icon"></div></div>
+        <div class="yt-main">
+          <div class="yt-video-thumb"></div>
+          <div class="yt-content-bar med"></div><div class="yt-content-bar short"></div>
+        </div>
+        <!-- 접힌 탭: 로고만 -->
+        <button class="toggle-tab">
+          <img src="developer/web/chrome-extension-yt-auto-translator/assets/icons/icon48.png" alt="logo" onerror="this.style.display='none';this.parentNode.innerHTML='<span style=color:#BB86FC;font-size:16px>T</span>'">
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- A. API 키 모드 대기 -->
+  <div class="frame-wrap">
+    <div class="frame-label">A. API 키 모드 (대기)</div>
+    <div class="browser-frame">
+      <div class="browser-topbar">
+        <div class="browser-dots"><div class="browser-dot red"></div><div class="browser-dot yellow"></div><div class="browser-dot green"></div></div>
+        <div class="browser-url">studio.youtube.com/video/abc123/edit</div>
+      </div>
+      <div class="yt-studio-bg">
+        <div class="yt-nav"><div class="yt-nav-icon active"></div><div class="yt-nav-icon"></div></div>
+        <div class="yt-main"><div class="yt-video-thumb"></div><div class="yt-content-bar med"></div><div class="yt-content-bar short"></div></div>
+        <div class="sidebar">
+          <div class="s-header">
+            <div class="s-header-left">
+              <img class="s-logo-img" src="developer/web/chrome-extension-yt-auto-translator/assets/icons/icon48.png" alt="logo" onerror="this.style.display='none'">
+              <span class="s-title">YouTube 번역 AI</span>
+            </div>
+            <button class="s-close">&times;</button>
+          </div>
+          <!-- API 키 스트립 -->
+          <div class="s-mode-strip apikey">
+            <div class="strip-left">
+              <div class="strip-dot"></div>
+              <span class="strip-label">번역 방식</span>
+              <span class="strip-value">내 API 키</span>
+            </div>
+          </div>
+          <div class="s-control"><button class="btn-start">▶  번역 시작</button></div>
+          <div class="s-logs">
+            <div class="log-card info">
+              <div class="log-top"><span class="log-type" style="color:#BB86FC">INFO</span><span class="log-time">12:34:00</span></div>
+              <div class="log-msg">유튜브 스튜디오의 영상 수정 페이지에서 번역 시작 버튼을 클릭하세요.</div>
+            </div>
+          </div>
+          <div class="s-footer"><button class="btn-settings">⚙️ 설정</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- B. API 키 모드 번역 완료 + 절감 메시지 -->
+  <div class="frame-wrap">
+    <div class="frame-label">B. API 키 모드 (번역 완료)</div>
+    <div class="browser-frame">
+      <div class="browser-topbar">
+        <div class="browser-dots"><div class="browser-dot red"></div><div class="browser-dot yellow"></div><div class="browser-dot green"></div></div>
+        <div class="browser-url">studio.youtube.com/video/abc123/edit</div>
+      </div>
+      <div class="yt-studio-bg">
+        <div class="yt-nav"><div class="yt-nav-icon active"></div><div class="yt-nav-icon"></div></div>
+        <div class="yt-main"><div class="yt-video-thumb"></div><div class="yt-content-bar med"></div><div class="yt-content-bar short"></div></div>
+        <div class="sidebar">
+          <div class="s-header">
+            <div class="s-header-left">
+              <img class="s-logo-img" src="developer/web/chrome-extension-yt-auto-translator/assets/icons/icon48.png" alt="logo" onerror="this.style.display='none'">
+              <span class="s-title">YouTube 번역 AI</span>
+            </div>
+            <button class="s-close">&times;</button>
+          </div>
+          <div class="s-mode-strip apikey">
+            <div class="strip-left">
+              <div class="strip-dot"></div>
+              <span class="strip-label">번역 방식</span>
+              <span class="strip-value">내 API 키</span>
+            </div>
+          </div>
+          <div class="s-control"><button class="btn-start">▶  번역 시작</button></div>
+          <div class="s-logs">
+            <!-- 크레딧 절감 안내 카드 -->
+            <div class="log-card upsell">
+              <div class="log-top"><span class="log-type" style="color:#03DAC6">TIP</span><span class="log-time">12:37:42</span></div>
+              <div class="log-msg">⚡ 크레딧 모드로 번역했다면 <strong style="color:#03DAC6">2분 18초</strong>를 절감할 수 있었습니다.</div>
+              <div class="log-cta">크레딧 모드 알아보기 →</div>
+            </div>
+            <div class="log-card success">
+              <div class="log-top"><span class="log-type" style="color:#03DAC6">SUCCESS</span><span class="log-time">12:37:42</span></div>
+              <div class="log-msg">✅ 번역 완료! 총 1개 언어 업로드 성공</div>
+            </div>
+            <div class="log-card info">
+              <div class="log-top"><span class="log-type" style="color:#BB86FC">INFO</span><span class="log-time">12:35:22</span></div>
+              <div class="log-msg">🚀 번역을 시작합니다...</div>
+            </div>
+          </div>
+          <div class="s-footer"><button class="btn-settings">⚙️ 설정</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- C. 크레딧 모드 대기 -->
+  <div class="frame-wrap">
+    <div class="frame-label">C. 크레딧 모드 (대기)</div>
+    <div class="browser-frame">
+      <div class="browser-topbar">
+        <div class="browser-dots"><div class="browser-dot red"></div><div class="browser-dot yellow"></div><div class="browser-dot green"></div></div>
+        <div class="browser-url">studio.youtube.com/video/abc123/edit</div>
+      </div>
+      <div class="yt-studio-bg">
+        <div class="yt-nav"><div class="yt-nav-icon active"></div><div class="yt-nav-icon"></div></div>
+        <div class="yt-main"><div class="yt-video-thumb"></div><div class="yt-content-bar med"></div><div class="yt-content-bar short"></div></div>
+        <div class="sidebar">
+          <div class="s-header">
+            <div class="s-header-left">
+              <img class="s-logo-img" src="developer/web/chrome-extension-yt-auto-translator/assets/icons/icon48.png" alt="logo" onerror="this.style.display='none'">
+              <span class="s-title">YouTube 번역 AI</span>
+            </div>
+            <button class="s-close">&times;</button>
+          </div>
+          <!-- 크레딧 스트립 -->
+          <div class="s-mode-strip credits">
+            <div class="strip-left">
+              <div class="strip-dot"></div>
+              <span class="strip-label">크레딧</span>
+              <span class="strip-value">$12.42</span>
+            </div>
+            <button class="strip-btn">충전</button>
+          </div>
+          <div class="s-control"><button class="btn-start">▶  번역 시작</button></div>
+          <div class="s-logs">
+            <div class="log-card info">
+              <div class="log-top"><span class="log-type" style="color:#BB86FC">INFO</span><span class="log-time">12:34:00</span></div>
+              <div class="log-msg">유튜브 스튜디오의 영상 수정 페이지에서 번역 시작 버튼을 클릭하세요.</div>
+            </div>
+          </div>
+          <div class="s-footer"><button class="btn-settings">⚙️ 설정</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- D. 크레딧 모드 번역 중 -->
+  <div class="frame-wrap">
+    <div class="frame-label">D. 크레딧 모드 (번역 중)</div>
+    <div class="browser-frame">
+      <div class="browser-topbar">
+        <div class="browser-dots"><div class="browser-dot red"></div><div class="browser-dot yellow"></div><div class="browser-dot green"></div></div>
+        <div class="browser-url">studio.youtube.com/video/abc123/edit</div>
+      </div>
+      <div class="yt-studio-bg">
+        <div class="yt-nav"><div class="yt-nav-icon active"></div><div class="yt-nav-icon"></div></div>
+        <div class="yt-main"><div class="yt-video-thumb"></div><div class="yt-content-bar med"></div><div class="yt-content-bar short"></div></div>
+        <div class="sidebar">
+          <div class="s-header">
+            <div class="s-header-left">
+              <img class="s-logo-img" src="developer/web/chrome-extension-yt-auto-translator/assets/icons/icon48.png" alt="logo" onerror="this.style.display='none'">
+              <span class="s-title">YouTube 번역 AI</span>
+            </div>
+            <button class="s-close">&times;</button>
+          </div>
+          <div class="s-mode-strip credits">
+            <div class="strip-left">
+              <div class="strip-dot"></div>
+              <span class="strip-label">크레딧</span>
+              <span class="strip-value">$11.87</span>
+            </div>
+            <button class="strip-btn">충전</button>
+          </div>
+          <div class="s-control"><button class="btn-stop">■  번역 중지</button></div>
+          <div class="s-progress">
+            <div class="s-progress-info"><span>번역 진행률</span><span>38%</span></div>
+            <div class="s-bar-bg"><div class="s-bar-fill" style="width:38%"></div></div>
+          </div>
+          <div class="s-chips">
+            <span class="chip done">English</span>
+            <span class="chip active">日本語</span>
+            <span class="chip pending">中文</span>
+            <span class="chip pending">Español</span>
+          </div>
+          <div class="s-logs">
+            <div class="log-card info">
+              <div class="log-top"><span class="log-type" style="color:#BB86FC">INFO</span><span class="log-time">12:35:22</span></div>
+              <div class="log-msg">🔄 [日本語] 번역 중... (4/8 청크)</div>
+            </div>
+            <div class="log-card success">
+              <div class="log-top"><span class="log-type" style="color:#03DAC6">SUCCESS</span><span class="log-time">12:35:10</span></div>
+              <div class="log-msg">✅ [English] 완료 ✓</div>
+            </div>
+          </div>
+          <div class="s-footer"><button class="btn-settings">⚙️ 설정</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- E. 크레딧 부족 -->
+  <div class="frame-wrap">
+    <div class="frame-label">E. 크레딧 부족 경고</div>
+    <div class="browser-frame">
+      <div class="browser-topbar">
+        <div class="browser-dots"><div class="browser-dot red"></div><div class="browser-dot yellow"></div><div class="browser-dot green"></div></div>
+        <div class="browser-url">studio.youtube.com/video/abc123/edit</div>
+      </div>
+      <div class="yt-studio-bg">
+        <div class="yt-nav"><div class="yt-nav-icon active"></div><div class="yt-nav-icon"></div></div>
+        <div class="yt-main"><div class="yt-video-thumb"></div><div class="yt-content-bar med"></div><div class="yt-content-bar short"></div></div>
+        <div class="sidebar">
+          <div class="s-header">
+            <div class="s-header-left">
+              <img class="s-logo-img" src="developer/web/chrome-extension-yt-auto-translator/assets/icons/icon48.png" alt="logo" onerror="this.style.display='none'">
+              <span class="s-title">YouTube 번역 AI</span>
+            </div>
+            <button class="s-close">&times;</button>
+          </div>
+          <div class="s-mode-strip credits low">
+            <div class="strip-left">
+              <div class="strip-dot"></div>
+              <span class="strip-label">크레딧 부족</span>
+              <span class="strip-value">$0.23</span>
+            </div>
+            <button class="strip-btn">충전</button>
+          </div>
+          <div class="s-control"><button class="btn-start">▶  번역 시작</button></div>
+          <div class="s-logs">
+            <div class="log-card error">
+              <div class="log-top"><span class="log-type" style="color:#CF6679">ERROR</span><span class="log-time">12:40:05</span></div>
+              <div class="log-msg">❌ 크레딧이 부족합니다. 번역을 계속하려면 충전해 주세요.</div>
+            </div>
+            <div class="log-card info">
+              <div class="log-top"><span class="log-type" style="color:#BB86FC">INFO</span><span class="log-time">12:40:00</span></div>
+              <div class="log-msg">🚀 번역을 시작합니다...</div>
+            </div>
+          </div>
+          <div class="s-footer"><button class="btn-settings">⚙️ 설정</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+
+  <!-- F. 크레딧 모드 시작하기 클릭 후 -->
+  <div class="frame-wrap">
+    <div class="frame-label">F. 크레딧 시작하기 → 클릭 후</div>
+    <div class="browser-frame">
+      <div class="browser-topbar">
+        <div class="browser-dots"><div class="browser-dot red"></div><div class="browser-dot yellow"></div><div class="browser-dot green"></div></div>
+        <div class="browser-url">studio.youtube.com/video/abc123/edit</div>
+      </div>
+      <div class="yt-studio-bg">
+        <div class="yt-nav"><div class="yt-nav-icon active"></div><div class="yt-nav-icon"></div></div>
+        <div class="yt-main"><div class="yt-video-thumb"></div><div class="yt-content-bar med"></div><div class="yt-content-bar short"></div></div>
+        <div class="sidebar">
+          <div class="s-header">
+            <div class="s-header-left">
+              <img class="s-logo-img" src="developer/web/chrome-extension-yt-auto-translator/assets/icons/icon48.png" alt="logo" onerror="this.style.display='none'">
+              <span class="s-title">YouTube 번역 AI</span>
+            </div>
+            <button class="s-close">&times;</button>
+          </div>
+          <!-- 크레딧 스트립: 잔액 $0.00 → 부족 상태 표시 -->
+          <div class="s-mode-strip credits low">
+            <div class="strip-left">
+              <div class="strip-dot"></div>
+              <span class="strip-label">크레딧 부족</span>
+              <span class="strip-value">$0.00</span>
+            </div>
+            <button class="strip-btn">충전</button>
+          </div>
+          <!-- 번역 시작 버튼 비활성 -->
+          <div class="s-control">
+            <button class="btn-start" style="opacity:0.4;cursor:not-allowed;">▶  번역 시작</button>
+          </div>
+          <div class="s-logs">
+            <!-- 충전 유도 카드 -->
+            <div class="log-card" style="background:rgba(3,218,198,0.07);border-left:3px solid #03DAC6;border-radius:7px;padding:8px 10px;">
+              <div class="log-top">
+                <span class="log-type" style="color:#03DAC6">💳 충전 필요</span>
+              </div>
+              <div class="log-msg">크레딧을 충전하면 <strong style="color:#03DAC6">26개 언어</strong>를 동시에 번역할 수 있습니다.</div>
+              <div class="log-cta">지금 충전하기 →</div>
+            </div>
+            <!-- 크레딧 모드 활성화 확인 -->
+            <div class="log-card success">
+              <div class="log-top"><span class="log-type" style="color:#03DAC6">SUCCESS</span><span class="log-time">방금</span></div>
+              <div class="log-msg">✅ 크레딧 모드가 활성화되었습니다.</div>
+            </div>
+          </div>
+          <div class="s-footer"><button class="btn-settings">⚙️ 설정</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- G. 크레딧 모드 알아보기 클릭 후 (비교 패널 슬라이드 업) -->
+  <div class="frame-wrap">
+    <div class="frame-label">G. 크레딧 모드 알아보기 → 클릭</div>
+    <div class="browser-frame">
+      <div class="browser-topbar">
+        <div class="browser-dots"><div class="browser-dot red"></div><div class="browser-dot yellow"></div><div class="browser-dot green"></div></div>
+        <div class="browser-url">studio.youtube.com/video/abc123/edit</div>
+      </div>
+      <div class="yt-studio-bg">
+        <div class="yt-nav"><div class="yt-nav-icon active"></div><div class="yt-nav-icon"></div></div>
+        <div class="yt-main"><div class="yt-video-thumb"></div><div class="yt-content-bar med"></div><div class="yt-content-bar short"></div></div>
+        <div class="sidebar">
+          <div class="s-header">
+            <div class="s-header-left">
+              <img class="s-logo-img" src="developer/web/chrome-extension-yt-auto-translator/assets/icons/icon48.png" alt="logo" onerror="this.style.display='none'">
+              <span class="s-title">YouTube 번역 AI</span>
+            </div>
+            <button class="s-close">&times;</button>
+          </div>
+          <div class="s-mode-strip apikey">
+            <div class="strip-left">
+              <div class="strip-dot"></div>
+              <span class="strip-label">번역 방식</span>
+              <span class="strip-value">내 API 키</span>
+            </div>
+          </div>
+          <div class="s-control"><button class="btn-start">▶  번역 시작</button></div>
+          <div class="s-logs">
+            <div class="log-card upsell">
+              <div class="log-top"><span class="log-type" style="color:#03DAC6">TIP</span><span class="log-time">12:37:42</span></div>
+              <div class="log-msg">⚡ 크레딧 모드로 번역했다면 <strong style="color:#03DAC6">2분 18초</strong>를 절감할 수 있었습니다.</div>
+              <div class="log-cta" style="color:rgba(255,255,255,0.3);text-decoration:none;cursor:default;">크레딧 모드 알아보기 →</div>
+            </div>
+          </div>
+          <!-- 비교 패널 오버레이 -->
+          <div class="credit-info-panel">
+            <div class="cip-handle"></div>
+            <div class="cip-header">
+              <span class="cip-title">⚡ 크레딧 모드란?</span>
+              <button class="cip-close">&times;</button>
+            </div>
+            <div class="cip-body">
+              <div class="cip-compare">
+                <div class="cip-compare-head">
+                  <span></span>
+                  <span>내 API 키</span>
+                  <span class="col-credit-h">크레딧</span>
+                </div>
+                <div class="cip-compare-row">
+                  <span class="row-label">번역 속도</span>
+                  <span class="val-poor">느림<br><span style="font-size:9px;color:rgba(255,255,255,0.25)">~12 RPM</span></span>
+                  <span class="val-good">⚡ 최대 속도<br><span style="font-size:9px;color:#03DAC6">병렬 처리</span></span>
+                </div>
+                <div class="cip-compare-row">
+                  <span class="row-label">동시 번역</span>
+                  <span class="val-poor">1개 언어</span>
+                  <span class="val-good">🌍 최대 26개</span>
+                </div>
+                <div class="cip-compare-row">
+                  <span class="row-label">API 키 설정</span>
+                  <span class="val-poor">필요</span>
+                  <span class="val-good">✅ 불필요</span>
+                </div>
+                <div class="cip-compare-row">
+                  <span class="row-label">비용 청구</span>
+                  <span class="val-poor" style="font-size:10px;">Google<br>계정</span>
+                  <span class="val-good" style="color:#4da3ff;font-size:10px;">크레딧<br>차감</span>
+                </div>
+              </div>
+              <div style="font-size:10px;color:rgba(255,255,255,0.3);line-height:1.5;">
+                크레딧은 선불 충전 방식입니다. 남은 크레딧은 만료되지 않습니다.
+              </div>
+            </div>
+            <div class="cip-cta-wrap">
+              <button class="cip-cta-btn">크레딧 충전하기 →</button>
+            </div>
+          </div>
+          <div class="s-footer"><button class="btn-settings">⚙️ 설정</button></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- H. 충전 버튼 클릭 (사이드바 내 다크 충전 시트) -->
+  <div class="frame-wrap">
+    <div class="frame-label">H. 충전 버튼 → 클릭 (충전 시트)</div>
+    <div class="browser-frame">
+      <div class="browser-topbar">
+        <div class="browser-dots"><div class="browser-dot red"></div><div class="browser-dot yellow"></div><div class="browser-dot green"></div></div>
+        <div class="browser-url">studio.youtube.com/video/abc123/edit</div>
+      </div>
+      <div class="yt-studio-bg">
+        <div class="yt-nav"><div class="yt-nav-icon active"></div><div class="yt-nav-icon"></div></div>
+        <div class="yt-main"><div class="yt-video-thumb"></div><div class="yt-content-bar med"></div><div class="yt-content-bar short"></div></div>
+        <div class="sidebar">
+          <div class="s-header">
+            <div class="s-header-left">
+              <img class="s-logo-img" src="developer/web/chrome-extension-yt-auto-translator/assets/icons/icon48.png" alt="logo" onerror="this.style.display='none'">
+              <span class="s-title">YouTube 번역 AI</span>
+            </div>
+            <button class="s-close">&times;</button>
+          </div>
+          <div class="s-mode-strip credits">
+            <div class="strip-left">
+              <div class="strip-dot"></div>
+              <span class="strip-label">크레딧</span>
+              <span class="strip-value">$12.42</span>
+            </div>
+            <button class="strip-btn">충전</button>
+          </div>
+          <div class="s-control"><button class="btn-start">▶  번역 시작</button></div>
+          <div class="s-logs">
+            <div class="log-card info">
+              <div class="log-top"><span class="log-type" style="color:#BB86FC">INFO</span><span class="log-time">12:34:00</span></div>
+              <div class="log-msg">유튜브 스튜디오의 영상 수정 페이지에서 번역 시작 버튼을 클릭하세요.</div>
+            </div>
+          </div>
+          <div class="s-footer"><button class="btn-settings">⚙️ 설정</button></div>
+
+          <!-- 충전 시트 오버레이 -->
+          <div class="sidebar-charge-overlay">
+            <div class="scm-sheet">
+              <div class="scm-handle"></div>
+              <div class="scm-title">크레딧 충전</div>
+              <div class="scm-balance">현재 잔액: <span>$12.42</span></div>
+
+              <div class="scm-label">충전 금액</div>
+              <div class="scm-amounts">
+                <div class="scm-amt">₩10,000</div>
+                <div class="scm-amt sel">₩20,000</div>
+                <div class="scm-amt">₩50,000</div>
+                <div class="scm-amt">직접 입력</div>
+              </div>
+
+              <div class="scm-label">결제 수단</div>
+              <div class="scm-payment">
+                <div class="scm-pay-opt sel">🇰🇷 KRW<br><span style="font-size:9px;opacity:0.6;">Toss</span></div>
+                <div class="scm-pay-opt">🌐 USD<br><span style="font-size:9px;opacity:0.6;">Portone</span></div>
+              </div>
+
+              <div class="scm-summary">
+                <div class="scm-row"><span>결제 금액</span><span>₩20,000</span></div>
+                <div class="scm-row"><span>적립 크레딧</span><span>≈ $14.81</span></div>
+                <div class="scm-row"><span>충전 후 잔액</span><span>$27.23</span></div>
+              </div>
+
+              <button class="scm-confirm">₩20,000 결제하기</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

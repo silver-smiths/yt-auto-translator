@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>설정 페이지 목업 — v2.0</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --primary: #065fd4;
+      --primary-hover: #0550b3;
+      --bg: #ffffff;
+      --bg-secondary: #f5f5f5;
+      --text: #0d0d0d;
+      --text-secondary: #606060;
+      --border: #d0d0d0;
+      --radius: 8px;
+      --success: #2e7d32;
+      --warning-bg: #fff8e1;
+      --warning-border: #ffe082;
+      --warning-text: #5c4000;
+      --info-bg: #e8f4fd;
+      --info-border: #90caf9;
+      --info-text: #1a3a5c;
+      --credit-bg: #e8f0fe;
+      --credit-border: #c5d8fb;
+      --credit-text: #1a3a6b;
+    }
+
+    body {
+      font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, 'Noto Sans KR', sans-serif;
+      font-size: 14px;
+      color: var(--text);
+      background: var(--bg-secondary);
+    }
+
+    /* ── 레이아웃 ── */
+    .container {
+      max-width: 640px;
+      margin: 40px auto 120px;
+      background: var(--bg);
+      border-radius: 12px;
+      padding: 32px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    h1 { font-size: 20px; font-weight: 700; margin-bottom: 28px; }
+
+    .section { margin-bottom: 24px; }
+
+    .label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 8px;
+    }
+
+    hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
+
+    .hint {
+      font-size: 14px;
+      color: var(--text-secondary);
+      margin-top: 6px;
+      line-height: 1.5;
+    }
+
+    /* ── 번역 방식 옵션 ── */
+    .mode-options {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .mode-option {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .mode-option:has(input:checked) {
+      border-color: var(--primary);
+      background: #f0f5ff;
+    }
+    .mode-option input[type="radio"] {
+      margin-top: 3px;
+      flex-shrink: 0;
+      accent-color: var(--primary);
+      cursor: pointer;
+    }
+    .mode-option-title { font-size: 13px; font-weight: 600; margin-bottom: 3px; }
+    .mode-option-desc  { font-size: 14px; color: var(--text-secondary); line-height: 1.5; }
+
+    .badge-new {
+      display: inline-block;
+      background: #e6f4ea;
+      color: #1a6b2e;
+      font-size: 14px;
+      font-weight: 700;
+      padding: 2px 7px;
+      border-radius: 99px;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+
+    /* ── 모드별 패널 (높이 고정, 부드러운 전환) ── */
+    .mode-panel-wrap {
+      position: relative;
+      min-height: 110px;
+      margin-top: 12px;
+    }
+    .mode-panel {
+      transition: opacity 0.2s, transform 0.2s;
+    }
+    .mode-panel.hidden {
+      opacity: 0;
+      pointer-events: none;
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      transform: translateY(4px);
+    }
+    .mode-panel.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .credit-balance-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: var(--credit-bg);
+      border: 1px solid var(--credit-border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      margin-top: 12px;
+    }
+    .credit-balance-label  { font-size: 14px; color: var(--credit-text); opacity: 0.7; margin-bottom: 3px; }
+    .credit-balance-amount { font-size: 24px; font-weight: 700; color: var(--primary); }
+
+    .btn-topup {
+      padding: 9px 18px;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    .btn-topup:hover { background: var(--primary-hover); }
+
+    /* ── 크레딧 모드 고정 모델 표시 ── */
+    .model-fixed-display {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg-secondary);
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+    .model-fixed-label { font-weight: 600; color: var(--text); }
+    .model-fixed-lock  { font-size: 14px; }
+
+    /* ── API 키 입력 ── */
+    .api-key-group { display: flex; gap: 8px; align-items: center; }
+    .api-key-group input { flex: 1; }
+
+    input[type="password"], input[type="text"], select {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 14px;
+      font-family: inherit;
+      background: var(--bg);
+      color: var(--text);
+      transition: border-color 0.2s;
+    }
+    input:focus, select:focus { outline: none; border-color: var(--primary); }
+
+    .btn-icon {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 8px 10px;
+      cursor: pointer;
+      color: var(--text-secondary);
+      font-size: 16px;
+      display: flex;
+      align-items: center;
+    }
+    .btn-icon:hover { background: var(--bg-secondary); }
+
+    /* ── 속도 표시 ── */
+    .speed-display {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+    }
+    .speed-badge {
+      font-size: 14px;
+      font-weight: 700;
+      padding: 3px 10px;
+      border-radius: 99px;
+    }
+    .badge-slow { background: var(--warning-bg); color: var(--warning-text); border: 1px solid var(--warning-border); }
+    .badge-fast { background: #e6f4ea; color: #1a6b2e; border: 1px solid #a8d5b5; }
+    .speed-desc { font-size: 14px; color: var(--text-secondary); }
+
+    /* ── 언어 그리드 ── */
+    .lang-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+    .lang-controls { display: flex; gap: 8px; }
+    .btn-small {
+      padding: 4px 12px;
+      font-size: 14px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      background: var(--bg);
+      cursor: pointer;
+      color: var(--text-secondary);
+    }
+    .btn-small:hover { background: var(--bg-secondary); }
+    .btn-small:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .lang-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+
+    .lang-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 8px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: background 0.15s;
+      user-select: none;
+    }
+    .lang-item:hover { background: var(--bg-secondary); }
+    .lang-item.selected { background: #e3f2fd; border-color: var(--primary); }
+    .lang-item input[type="checkbox"] { accent-color: var(--primary); pointer-events: none; }
+    .lang-native { display: block; font-size: 14px; color: var(--text-secondary); }
+
+    /* ── 알림 박스 ── */
+    .notice {
+      padding: 10px 13px;
+      border-radius: var(--radius);
+      font-size: 14px;
+      line-height: 1.6;
+      margin-bottom: 10px;
+    }
+    .notice-warn { background: var(--warning-bg); border: 1px solid var(--warning-border); color: var(--warning-text); }
+    .notice-info { background: var(--info-bg); border: 1px solid var(--info-border); color: var(--info-text); }
+    .notice-success { background: #e6f4ea; border: 1px solid #a8d5b5; color: #1a4d2e; }
+
+    /* ── 저장 버튼 (플로팅) ── */
+    .actions {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      padding: 14px 24px;
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(8px);
+      border-top: 1px solid var(--border);
+      z-index: 100;
+    }
+    .btn-primary {
+      min-width: 160px;
+      padding: 10px 28px;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      background: var(--primary);
+      color: #fff;
+      transition: background 0.2s;
+    }
+    .btn-primary:hover { background: var(--primary-hover); }
+    .btn-primary:disabled { background: #b0b0b0; cursor: not-allowed; }
+
+    .save-status {
+      font-size: 13px;
+      color: var(--success);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+    .save-status.visible { opacity: 1; }
+
+    /* ── 충전 모달 ── */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.45);
+      z-index: 200;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal-card {
+      background: var(--bg);
+      border-radius: 16px;
+      padding: 28px;
+      width: 380px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+      position: relative;
+    }
+    .modal-close {
+      position: absolute; top: 14px; right: 16px;
+      background: none; border: none;
+      font-size: 20px; color: #999; cursor: pointer;
+      padding: 2px 6px; border-radius: 4px;
+    }
+    .modal-close:hover { background: var(--bg-secondary); }
+    .modal-title { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+    .modal-balance {
+      font-size: 13px; color: var(--text-secondary);
+      margin-bottom: 20px;
+    }
+    .modal-balance span { color: var(--primary); font-weight: 600; }
+    .modal-section-label {
+      font-size: 12px; font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+    .amount-options {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .amount-btn {
+      padding: 10px 4px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg);
+      font-size: 13px; font-weight: 600;
+      cursor: pointer; text-align: center;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .amount-btn:hover { border-color: var(--primary); background: #f0f5ff; }
+    .amount-btn.selected { border-color: var(--primary); background: #f0f5ff; color: var(--primary); }
+    .amount-custom {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+    .amount-custom:focus { outline: none; border-color: var(--primary); }
+    .payment-method-options {
+      display: flex; gap: 8px;
+      margin-bottom: 20px;
+    }
+    .payment-method-btn {
+      flex: 1; padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg);
+      font-size: 12px; font-weight: 600;
+      cursor: pointer; text-align: center;
+      transition: border-color 0.15s, background 0.15s;
+    }
+    .payment-method-btn:hover { border-color: var(--primary); }
+    .payment-method-btn.selected { border-color: var(--primary); background: #f0f5ff; color: var(--primary); }
+    .modal-summary {
+      background: var(--bg-secondary);
+      border-radius: var(--radius);
+      padding: 12px 14px;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+    .summary-row {
+      display: flex; justify-content: space-between;
+      margin-bottom: 6px; color: var(--text-secondary);
+    }
+    .summary-row:last-child { margin-bottom: 0; font-weight: 700; color: var(--text); }
+    .btn-pay {
+      width: 100%; padding: 13px;
+      background: var(--primary); color: #fff;
+      border: none; border-radius: var(--radius);
+      font-size: 15px; font-weight: 700;
+      cursor: pointer; transition: background 0.2s;
+    }
+    .btn-pay:hover { background: var(--primary-hover); }
+
+    /* ── 목업 헤더 배지 ── */
+    /* ── 웰컴 카드 ── */
+    .welcome-card {
+      background: linear-gradient(135deg, #f0f5ff 0%, #e8f4fd 100%);
+      border: 1px solid #c5d8fb;
+      border-radius: 12px;
+      padding: 20px 22px;
+      margin-bottom: 24px;
+      position: relative;
+    }
+    .welcome-close {
+      position: absolute;
+      top: 12px; right: 14px;
+      background: none; border: none;
+      font-size: 18px; color: #999;
+      cursor: pointer; line-height: 1;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: background 0.15s;
+    }
+    .welcome-close:hover { background: rgba(0,0,0,0.06); }
+    .welcome-title {
+      font-size: 16px; font-weight: 700;
+      color: #1a3a6b; margin-bottom: 14px;
+    }
+    .welcome-features {
+      display: flex; flex-direction: column; gap: 8px;
+      margin-bottom: 18px;
+    }
+    .welcome-feature {
+      display: flex; align-items: flex-start; gap: 8px;
+      font-size: 13px; color: #2c4a7c;
+    }
+    .welcome-feature-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+    .welcome-feature strong { color: #0d2a5e; }
+    .welcome-cta {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--primary); color: #fff;
+      padding: 9px 20px; border: none;
+      border-radius: var(--radius);
+      font-size: 13px; font-weight: 700;
+      cursor: pointer; transition: background 0.2s;
+      text-decoration: none;
+    }
+    .welcome-cta:hover { background: var(--primary-hover); }
+    .welcome-note {
+      font-size: 11px; color: #6b8ab8;
+      margin-top: 10px;
+    }
+
+    .mockup-badge {
+      display: inline-block;
+      background: #fff3cd;
+      border: 1px solid #ffc107;
+      color: #664d03;
+      font-size: 14px;
+      padding: 4px 12px;
+      border-radius: 99px;
+      margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+
+<div class="container">
+  <div class="mockup-badge">🎨 목업 — v2.0 설정 페이지 (실제 동작 확인용)</div>
+  <h1>⚙️ 설정</h1>
+
+  <!-- ── 웰컴 카드 (최초 설치 시만 표시) ── -->
+  <div class="welcome-card" id="welcomeCard">
+    <button class="welcome-close" onclick="dismissWelcome()" title="닫기">×</button>
+
+    <!-- 스텝 1: 기본 (모드 미선택) -->
+    <div id="welcomeStep1">
+      <div class="welcome-title">YouTube 자막 번역을 자동화하세요 🚀</div>
+      <div class="welcome-features">
+        <div class="welcome-feature">
+          <span class="welcome-feature-icon">🌍</span>
+          <span>Gemini AI로 <strong>26개 언어 자막</strong>을 한 번에 자동 번역</span>
+        </div>
+        <div class="welcome-feature">
+          <span class="welcome-feature-icon">📤</span>
+          <span>번역 결과가 <strong>YouTube Studio에 직접 등록</strong> — 파일 작업 없음</span>
+        </div>
+        <div class="welcome-feature">
+          <span class="welcome-feature-icon">⚡</span>
+          <span>최대 속도로 <strong>여러 언어 동시 번역</strong> — API 키 설정도 불필요</span>
+        </div>
+      </div>
+      <button class="welcome-cta" onclick="document.getElementById('modeCredits').click(); switchWelcomeStep('credits');">
+        크레딧으로 바로 시작 →
+      </button>
+      <div style="margin-top:12px; font-size:12px; color:#6b8ab8;">
+        이미 Gemini API 키가 있으신가요?
+        <button onclick="document.getElementById('modeMyKey').click(); switchWelcomeStep('apikey');"
+          style="background:none; border:none; color:var(--primary); font-size:12px; cursor:pointer; text-decoration:underline; text-underline-offset:2px; padding:0;">
+          API 키로 시작하기
+        </button>
+      </div>
+    </div>
+
+    <!-- 스텝 2: 크레딧 선택 후 -->
+    <div id="welcomeStep2" style="display:none;">
+      <div class="welcome-title">거의 다 됐어요! 🎉</div>
+      <div class="welcome-features">
+        <div class="welcome-feature">
+          <span class="welcome-feature-icon">✅</span>
+          <span>번역 방식 선택 완료 — <strong>크레딧 모드</strong></span>
+        </div>
+        <div class="welcome-feature">
+          <span class="welcome-feature-icon">💳</span>
+          <span>크레딧을 충전하면 <strong>바로 사용</strong>할 수 있습니다</span>
+        </div>
+        <div class="welcome-feature">
+          <span class="welcome-feature-icon">🌍</span>
+          <span>충전 후 <strong>YouTube Studio 영상 편집 페이지</strong>로 이동해 번역을 시작하세요</span>
+        </div>
+      </div>
+      <button class="welcome-cta" onclick="openChargeModal()">
+        크레딧 충전하기 →
+      </button>
+      <div style="margin-top:12px; font-size:12px; color:#6b8ab8;">
+        <button onclick="switchWelcomeStep('default'); document.getElementById('modeMyKey').click();"
+          style="background:none; border:none; color:#6b8ab8; font-size:12px; cursor:pointer; text-decoration:underline; text-underline-offset:2px; padding:0;">
+          ← 다시 선택하기
+        </button>
+      </div>
+    </div>
+
+    <!-- 스텝 3: API 키 선택 후 -->
+    <div id="welcomeStep3" style="display:none;">
+      <div class="welcome-title">API 키를 입력해 주세요 🔑</div>
+      <div class="welcome-features">
+        <div class="welcome-feature">
+          <span class="welcome-feature-icon">✅</span>
+          <span>번역 방식 선택 완료 — <strong>내 API 키 모드</strong></span>
+        </div>
+        <div class="welcome-feature">
+          <span class="welcome-feature-icon">1️⃣</span>
+          <span><a href="https://aistudio.google.com/apikey" target="_blank" style="color:var(--primary);">Google AI Studio</a>에서 <strong>무료 API 키 발급</strong></span>
+        </div>
+        <div class="welcome-feature">
+          <span class="welcome-feature-icon">2️⃣</span>
+          <span>아래 <strong>API 키 입력란</strong>에 붙여넣고 저장</span>
+        </div>
+      </div>
+      <button class="welcome-cta" onclick="document.getElementById('apiKey').focus();">
+        API 키 입력하러 가기 →
+      </button>
+      <div style="margin-top:12px; font-size:12px; color:#6b8ab8;">
+        <button onclick="switchWelcomeStep('default'); document.getElementById('modeCredits').click();"
+          style="background:none; border:none; color:#6b8ab8; font-size:12px; cursor:pointer; text-decoration:underline; text-underline-offset:2px; padding:0;">
+          ← 다시 선택하기
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── 번역 방식 ── -->
+  <section class="section">
+    <label class="label">🔧 번역 방식</label>
+    <div class="mode-options">
+      <label class="mode-option">
+        <input type="radio" name="mode" id="modeMyKey" value="my_key" checked>
+        <div>
+          <div class="mode-option-title">내 API 키 사용</div>
+          <div class="mode-option-desc">직접 발급한 Gemini API 키로 번역합니다. 비용은 내 Google 계정에 청구됩니다.</div>
+        </div>
+      </label>
+      <label class="mode-option">
+        <input type="radio" name="mode" id="modeCredits" value="credits">
+        <div>
+          <div class="mode-option-title">크레딧 사용 <span class="badge-new">NEW</span></div>
+          <div class="mode-option-desc">API 키 없이 크레딧으로 번역합니다. 최대 속도 · 최대 26개 언어 동시 번역.</div>
+        </div>
+      </label>
+    </div>
+
+    <!-- 모드별 패널 (같은 자리에서 교체) -->
+    <div class="mode-panel-wrap">
+
+      <!-- 내 API 키 패널 -->
+      <div id="apiKeyPanel" class="mode-panel visible">
+        <label class="label" style="margin-bottom:8px;">🔑 Gemini API 키</label>
+        <div class="api-key-group">
+          <input type="password" id="apiKey" value="AIzaSyExample1234567890" placeholder="API 키를 붙여넣으세요">
+          <button class="btn-icon" onclick="toggleKey()">👁</button>
+        </div>
+        <p class="hint">API 키는 이 기기에만 저장되며 외부 서버로 전송되지 않습니다.</p>
+      </div>
+
+      <!-- 크레딧 패널 -->
+      <div id="creditPanel" class="mode-panel hidden">
+        <div class="credit-balance-card">
+          <div>
+            <div class="credit-balance-label">크레딧 잔액</div>
+            <div class="credit-balance-amount">$12.42</div>
+          </div>
+          <button class="btn-topup" onclick="openChargeModal()">충전하기</button>
+        </div>
+        <p class="hint" style="margin-top:6px;">잔액이 소진되면 번역이 중단됩니다. 미리 충전해 두세요.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <hr>
+
+  <!-- ── 모델 ── -->
+  <section class="section">
+    <label class="label">AI 모델</label>
+
+    <!-- 내 API 키 모드: 드롭다운 -->
+    <div id="modelSelectWrap">
+      <select id="modelSelect">
+        <option selected>Gemini 2.5 Flash (권장)</option>
+        <option>Gemini 2.5 Flash-Lite (경량)</option>
+        <option>Gemini 2.5 Pro (고품질)</option>
+      </select>
+    </div>
+
+    <!-- 크레딧 모드: 고정 표시 -->
+    <div id="modelFixed" style="display:none;">
+      <div class="model-fixed-display">
+        <span class="model-fixed-label">YTAT에서 추천하는 모델</span>
+        <span class="model-fixed-lock">🔒</span>
+      </div>
+      <p class="hint">크레딧 모드에서는 최적 성능의 모델이 자동 적용됩니다.</p>
+    </div>
+  </section>
+
+  <!-- ── 번역 속도 ── -->
+  <section class="section">
+    <label class="label">⚡ 번역 속도</label>
+    <div class="speed-display" id="speedDisplay">
+      <span class="speed-badge badge-slow" id="speedBadge">무료 티어 고정</span>
+      <span class="speed-desc" id="speedDesc">느림 · 5초 간격 (~12 RPM)</span>
+    </div>
+    <p class="hint" id="speedHint">더 빠른 번역을 원하면 크레딧 모드를 사용하세요.</p>
+  </section>
+
+  <!-- ── 원본 자막 언어 ── -->
+  <section class="section">
+    <label class="label">🎙 원본 자막 언어</label>
+    <select id="sourceLang">
+      <option value="auto" selected>자동 감지 (영상 기본 언어 자동 인식)</option>
+      <option value="ko">한국어 (Korean)</option>
+      <option value="en">English</option>
+      <option value="ja">日本語 (Japanese)</option>
+      <option value="zh-CN">中文(简体) (Mandarin Simplified)</option>
+      <option value="es">Español (Spanish)</option>
+      <option value="fr">Français (French)</option>
+      <option value="de">Deutsch (German)</option>
+      <option value="pt">Português (Portuguese)</option>
+      <option value="ru">Русский (Russian)</option>
+      <option value="hi">हिन्दी (Hindi)</option>
+      <option value="ar">العربية (Arabic)</option>
+      <option value="id">Bahasa Indonesia</option>
+      <option value="vi">Tiếng Việt (Vietnamese)</option>
+      <option value="tr">Türkçe (Turkish)</option>
+    </select>
+    <p class="hint">자동 감지를 선택하면 영상의 기본 자막 언어를 자동으로 찾습니다.</p>
+  </section>
+
+  <!-- ── 번역 언어 ── -->
+  <section class="section">
+    <div class="lang-header">
+      <label class="label" style="margin-bottom:0">번역 언어</label>
+      <div class="lang-controls">
+        <button class="btn-small" id="btnSelectAll" onclick="selectAll()" disabled>전체 선택</button>
+        <button class="btn-small" onclick="deselectAll()">전체 해제</button>
+      </div>
+    </div>
+
+    <div id="langNotice" class="notice notice-warn">
+      ⚠️ 내 API 키 모드에서는 한 번에 <strong>1개 언어</strong>만 번역할 수 있습니다.
+    </div>
+
+    <div class="lang-grid" id="langGrid"></div>
+  </section>
+
+</div>
+
+<!-- ── 충전 모달 ── -->
+<div class="modal-overlay" id="chargeModal">
+  <div class="modal-card">
+    <button class="modal-close" onclick="closeChargeModal()">×</button>
+    <div class="modal-title">크레딧 충전</div>
+    <div class="modal-balance">크레딧 잔액: <span id="modalBalance">$12.42</span></div>
+
+    <div class="modal-section-label">충전 금액 선택</div>
+    <div class="amount-options">
+      <button class="amount-btn" onclick="selectAmount(0, this)">₩10,000</button>
+      <button class="amount-btn selected" onclick="selectAmount(1, this)">₩20,000</button>
+      <button class="amount-btn" onclick="selectAmount(2, this)">₩50,000</button>
+      <button class="amount-btn" onclick="selectAmount(3, this)">직접 입력</button>
+    </div>
+    <input type="number" class="amount-custom" id="customAmount" placeholder="금액 직접 입력 ($10 이상)" value="20" min="10">
+
+    <div class="modal-section-label">결제 수단</div>
+    <div class="payment-method-options">
+      <button class="payment-method-btn selected" onclick="selectPayment(this, 'KRW')">🇰🇷 KRW 결제 <span style="font-size:10px;opacity:0.6;">Toss</span></button>
+      <button class="payment-method-btn" onclick="selectPayment(this, 'USD')">🌐 USD 결제 <span style="font-size:10px;opacity:0.6;">Portone</span></button>
+    </div>
+
+    <div class="modal-summary">
+      <div class="summary-row"><span>결제 금액</span><span id="summaryAmount">₩20,000</span></div>
+      <div class="summary-row"><span>적립 크레딧 (USD)</span><span id="summaryCredit">≈ $14.81</span></div>
+      <div class="summary-row"><span>결제 후 잔액</span><span id="summaryAfter">$27.23</span></div>
+    </div>
+
+    <button class="btn-pay" onclick="alert('Portone 결제 위젯이 여기서 실행됩니다.')">$20 결제하기</button>
+  </div>
+</div>
+
+<!-- 플로팅 저장 버튼 -->
+<div class="actions">
+  <button class="btn-primary" id="btnSave" onclick="save()">저장</button>
+  <span class="save-status" id="saveStatus"></span>
+</div>
+
+<script>
+  const LANGUAGES = [
+    { code: 'en',    name: 'English',                   native: 'English' },
+    { code: 'zh-CN', name: 'Mandarin (Simplified)',      native: '中文(简体)' },
+    { code: 'hi',    name: 'Hindi',                     native: 'हिन्दी' },
+    { code: 'es',    name: 'Spanish',                   native: 'Español' },
+    { code: 'fr',    name: 'French',                    native: 'Français' },
+    { code: 'ar',    name: 'Modern Standard Arabic',    native: 'العربية' },
+    { code: 'pt',    name: 'Portuguese',                native: 'Português' },
+    { code: 'bn',    name: 'Bengali',                   native: 'বাংলা' },
+    { code: 'ru',    name: 'Russian',                   native: 'Русский' },
+    { code: 'ur',    name: 'Urdu',                      native: 'اردو' },
+    { code: 'id',    name: 'Indonesian',                native: 'Bahasa Indonesia' },
+    { code: 'de',    name: 'German',                    native: 'Deutsch' },
+    { code: 'ja',    name: 'Japanese',                  native: '日本語' },
+    { code: 'pcm',   name: 'Nigerian Pidgin',           native: 'Naijá' },
+    { code: 'arz',   name: 'Egyptian Arabic',           native: 'مصرى' },
+    { code: 'mr',    name: 'Marathi',                   native: 'मराठी' },
+    { code: 'vi',    name: 'Vietnamese',                native: 'Tiếng Việt' },
+    { code: 'te',    name: 'Telugu',                    native: 'తెలుగు' },
+    { code: 'tr',    name: 'Turkish',                   native: 'Türkçe' },
+    { code: 'pa',    name: 'Western Punjabi',           native: 'پنجابی' },
+    { code: 'sw',    name: 'Swahili',                   native: 'Kiswahili' },
+    { code: 'tl',    name: 'Tagalog',                   native: 'Tagalog' },
+    { code: 'ta',    name: 'Tamil',                     native: 'தமிழ்' },
+    { code: 'yue',   name: 'Yue Chinese (Cantonese)',   native: '粵語' },
+    { code: 'wuu',   name: 'Wu Chinese (Shanghainese)', native: '吴语' },
+    { code: 'ko',    name: 'Korean',                    native: '한국어' },
+  ];
+
+  let selected = new Set(['en']);
+  let currentMode = 'my_key';
+
+  // 언어 그리드 빌드
+  function buildLangGrid() {
+    const grid = document.getElementById('langGrid');
+    grid.innerHTML = '';
+    LANGUAGES.forEach(lang => {
+      const item = document.createElement('label');
+      item.className = 'lang-item' + (selected.has(lang.code) ? ' selected' : '');
+      item.dataset.code = lang.code;
+      item.innerHTML = `
+        <input type="checkbox" ${selected.has(lang.code) ? 'checked' : ''}>
+        <span>${lang.native}<span class="lang-native">${lang.name}</span></span>
+      `;
+      item.addEventListener('click', e => {
+        e.preventDefault();
+        toggleLang(lang.code);
+      });
+      grid.appendChild(item);
+    });
+  }
+
+  function toggleLang(code) {
+    if (currentMode === 'my_key') {
+      // 1개만 허용
+      if (selected.has(code)) return; // 이미 선택된 것 클릭 시 무시
+      selected.clear();
+      selected.add(code);
+    } else {
+      // 다중 허용
+      if (selected.has(code)) {
+        if (selected.size === 1) return; // 최소 1개 유지
+        selected.delete(code);
+      } else {
+        selected.add(code);
+      }
+    }
+    buildLangGrid();
+  }
+
+  function selectAll() {
+    if (currentMode === 'credits') {
+      LANGUAGES.forEach(l => selected.add(l.code));
+      buildLangGrid();
+    }
+  }
+
+  function deselectAll() {
+    selected.clear();
+    selected.add(LANGUAGES[0].code); // 최소 1개 유지
+    buildLangGrid();
+  }
+
+  // 모드 전환
+  function applyMode(mode) {
+    currentMode = mode;
+    const isCredits = mode === 'credits';
+
+    // 패널 교체 (같은 자리, 부드러운 전환)
+    document.getElementById('apiKeyPanel').className  = 'mode-panel ' + (isCredits ? 'hidden' : 'visible');
+    document.getElementById('creditPanel').className  = 'mode-panel ' + (isCredits ? 'visible' : 'hidden');
+
+    // 모델 섹션 전환
+    document.getElementById('modelSelectWrap').style.display = isCredits ? 'none'  : 'block';
+    document.getElementById('modelFixed').style.display      = isCredits ? 'block' : 'none';
+
+    // 속도
+    const badge = document.getElementById('speedBadge');
+    const desc  = document.getElementById('speedDesc');
+    const hint  = document.getElementById('speedHint');
+    if (isCredits) {
+      badge.className = 'speed-badge badge-fast';
+      badge.textContent = '최대 속도';
+      desc.textContent  = '유료 플랜 · 병렬 처리';
+      hint.textContent  = '크레딧 소진 속도가 빠를 수 있습니다.';
+    } else {
+      badge.className = 'speed-badge badge-slow';
+      badge.textContent = '무료 티어 고정';
+      desc.textContent  = '느림 · 5초 간격 (~12 RPM)';
+      hint.textContent  = '더 빠른 번역을 원하면 크레딧 모드를 사용하세요.';
+    }
+
+    // 언어 제한 안내
+    const notice = document.getElementById('langNotice');
+    if (isCredits) {
+      notice.className = 'notice notice-success';
+      notice.innerHTML = '✅ 최대 <strong>26개 언어</strong>를 동시에 번역합니다.';
+      document.getElementById('btnSelectAll').disabled = false;
+      // 1개→여러 개로 전환 시 기존 선택 유지
+    } else {
+      notice.className = 'notice notice-warn';
+      notice.innerHTML = '⚠️ 내 API 키 모드에서는 한 번에 <strong>1개 언어</strong>만 번역할 수 있습니다.';
+      document.getElementById('btnSelectAll').disabled = true;
+      // 여러 개 선택 → 1개로 축소
+      if (selected.size > 1) {
+        const first = Array.from(selected)[0];
+        selected.clear();
+        selected.add(first);
+      }
+    }
+
+    buildLangGrid();
+  }
+
+  // 라디오 이벤트
+  document.querySelectorAll('input[name="mode"]').forEach(radio => {
+    radio.addEventListener('change', e => applyMode(e.target.value));
+  });
+
+  // API 키 표시/숨기기
+  function toggleKey() {
+    const input = document.getElementById('apiKey');
+    input.type = input.type === 'password' ? 'text' : 'password';
+  }
+
+  // 저장 (웰컴 카드와 무관)
+  function save() {
+    const status = document.getElementById('saveStatus');
+    // 목업용: 선택한 모드 저장 (실제 익스텐션은 chrome.storage.local 사용)
+    localStorage.setItem('mockup_mode', document.getElementById('modeCredits').checked ? 'credits' : 'my_key');
+    status.textContent = '✅ 저장되었습니다!';
+    status.classList.add('visible');
+    setTimeout(() => status.classList.remove('visible'), 2000);
+  }
+
+  // ── 충전 모달 ────────────────────────────────
+  let currentCurrency = 'KRW';
+  const PRESETS = { KRW: [10000, 20000, 50000], USD: [10, 20, 50] };
+  const BALANCE_USD = 12.42; // 크레딧 잔액 항상 USD
+  const KRW_RATE = 1350;     // 목업용 고정 환율 (실서비스에선 실시간 API)
+
+  function openChargeModal() {
+    document.getElementById('chargeModal').classList.add('open');
+    const defaultCurrency = navigator.language.startsWith('ko') ? 'KRW' : 'USD';
+    // 버튼 선택 상태도 맞춰줌
+    const btns = document.querySelectorAll('.payment-method-btn');
+    btns.forEach(b => b.classList.remove('selected'));
+    btns[defaultCurrency === 'KRW' ? 0 : 1].classList.add('selected');
+    setCurrency(defaultCurrency);
+  }
+  function closeChargeModal() {
+    document.getElementById('chargeModal').classList.remove('open');
+  }
+
+  function setCurrency(currency) {
+    currentCurrency = currency;
+    const presets = PRESETS[currency];
+    const btns = document.querySelectorAll('.amount-btn');
+    btns[0].textContent = formatAmt(presets[0], currency);
+    btns[1].textContent = formatAmt(presets[1], currency);
+    btns[2].textContent = formatAmt(presets[2], currency);
+    btns[3].textContent = '직접 입력';
+    btns.forEach(b => b.classList.remove('selected'));
+    btns[1].classList.add('selected');
+    const input = document.getElementById('customAmount');
+    input.value = presets[1];
+    input.placeholder = currency === 'KRW' ? '금액 직접 입력 (₩10,000 이상)' : '금액 직접 입력 ($10 이상)';
+    updateSummary();
+  }
+
+  function formatAmt(val, currency) {
+    return currency === 'KRW'
+      ? '₩' + val.toLocaleString()
+      : '$' + val;
+  }
+
+  function selectAmount(idx, btn) {
+    document.querySelectorAll('.amount-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    const input = document.getElementById('customAmount');
+    if (idx === 3) { input.focus(); }
+    else { input.value = PRESETS[currentCurrency][idx]; }
+    updateSummary();
+  }
+
+  function selectPayment(btn, currency) {
+    document.querySelectorAll('.payment-method-btn').forEach(b => b.classList.remove('selected'));
+    btn.classList.add('selected');
+    setCurrency(currency);
+  }
+
+  function updateSummary() {
+    const amt = parseFloat(document.getElementById('customAmount').value) || 0;
+    const isKRW = currentCurrency === 'KRW';
+
+    // 결제 금액 (선택 통화)
+    const payDisplay = isKRW
+      ? '₩' + Math.round(amt).toLocaleString()
+      : '$' + amt.toFixed(2);
+
+    // USD 환산 (KRW면 환율 적용)
+    const creditUSD = isKRW ? amt / KRW_RATE : amt;
+    const afterUSD  = BALANCE_USD + creditUSD;
+
+    document.getElementById('summaryAmount').textContent = payDisplay;
+    document.getElementById('summaryCredit').textContent = '≈ $' + creditUSD.toFixed(2);
+    document.getElementById('summaryAfter').textContent  = '$' + afterUSD.toFixed(2);
+    document.querySelector('.btn-pay').textContent = payDisplay + ' 결제하기';
+  }
+
+  document.getElementById('customAmount').addEventListener('input', updateSummary);
+  document.getElementById('chargeModal').addEventListener('click', function(e) {
+    if (e.target === this) closeChargeModal();
+  });
+
+  // ── 웰컴 카드 스텝 전환 ─────────────────────
+  function switchWelcomeStep(step) {
+    document.getElementById('welcomeStep1').style.display = step === 'default'  ? '' : 'none';
+    document.getElementById('welcomeStep2').style.display = step === 'credits'  ? '' : 'none';
+    document.getElementById('welcomeStep3').style.display = step === 'apikey'   ? '' : 'none';
+  }
+
+  // ── 웰컴 카드: × 버튼으로만 영구 소멸 ──────
+  function dismissWelcome() {
+    localStorage.setItem('mockup_welcome_dismissed', '1');
+    const card = document.getElementById('welcomeCard');
+    if (card) card.style.display = 'none';
+  }
+
+  // 초기화
+  buildLangGrid();
+
+  // 저장된 모드 복원
+  const savedMode = localStorage.getItem('mockup_mode');
+  if (savedMode === 'credits') {
+    document.getElementById('modeCredits').checked = true;
+    applyMode('credits');
+  }
+
+  // 이미 닫은 적 있으면 카드 숨김
+  if (localStorage.getItem('mockup_welcome_dismissed')) {
+    const card = document.getElementById('welcomeCard');
+    if (card) card.style.display = 'none';
+  }
+</script>
+</body>
+</html>
