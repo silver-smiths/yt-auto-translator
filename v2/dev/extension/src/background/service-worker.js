@@ -13,10 +13,16 @@ import {
 } from '../lib/youtube-api.js';
 import {
   fetchCredits,
+  createCheckout,
   createTranslationJob,
   translateChunk,
   updateTranslationJob,
 } from '../lib/backend-api.js';
+import {
+  getSavedTranslations,
+  saveTranslations,
+  clearSavedTranslations,
+} from '../lib/translation-cache.js';
 
 installGlobalErrorHandler('background');
 
@@ -82,6 +88,34 @@ function friendlyError(err) {
     return 'YouTube Studio 영상 수정 페이지에서만 사용할 수 있습니다.';
   }
   return '번역 중 오류가 발생했습니다. 페이지를 새로고침 후 다시 시도해 주세요.';
+}
+
+// ── 업로드 실패 상황별 상세 안내 메시지 ──────────────────────────────────────
+function getUploadErrorMessage(err, langName) {
+  const msg = (err?.message || String(err)).toLowerCase();
+
+  if (msg.includes('quotaexceeded') || (msg.includes('quota') && msg.includes('exceeded'))) {
+    return `[${langName}] YouTube 일일 API 한도 초과 — 번역 결과는 저장되었습니다. 내일(태평양 표준시 자정) 이후 다시 번역을 시작하면 추가 크레딧 없이 자막이 자동 등록됩니다.`;
+  }
+  if (msg.includes('forbidden') || msg.includes('insufficientpermissions') || msg.includes('access denied')) {
+    return `[${langName}] 권한 오류 — 이 영상의 채널 소유자 계정으로 YouTube에 로그인되어 있는지 확인해 주세요.`;
+  }
+  if (msg.includes('401') || msg.includes('unauthorized') || msg.includes('invalid credentials') || msg.includes('auth')) {
+    return `[${langName}] 인증 만료 — 페이지를 새로고침 후 다시 시도해 주세요.`;
+  }
+  if (msg.includes('404') || msg.includes('not found') || msg.includes('videonotfound')) {
+    return `[${langName}] 영상을 찾을 수 없음 — 영상이 삭제됐거나 비공개로 전환되었을 수 있습니다.`;
+  }
+  if (msg.includes('409') || msg.includes('duplicate') || msg.includes('already exists')) {
+    return `[${langName}] 이미 해당 언어 자막이 존재합니다 — YouTube Studio에서 기존 자막을 삭제 후 다시 시도해 주세요.`;
+  }
+  if (msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('network')) {
+    return `[${langName}] 네트워크 오류 — 인터넷 연결 상태를 확인하고 다시 시도해 주세요.`;
+  }
+  if (msg.includes('500') || msg.includes('internal server')) {
+    return `[${langName}] YouTube 서버 오류 — 일시적인 문제입니다. 잠시 후 다시 시도해 주세요.`;
+  }
+  return `[${langName}] 자막 등록 실패 (${err?.message || '알 수 없는 오류'}) — 문제가 계속되면 ⚙️ 설정 > 앱 로그를 확인해 주세요.`;
 }
 
 function broadcast(message, tabId = state.tabId) {
@@ -303,10 +337,9 @@ async function runTranslationCredits(tabId, settings) {
   let jobId = null;
 
   try {
-    // 1. 잔액 확인 (빠른 실패)
+    // 1. 잔액 조회 (실제 검증은 신규 번역이 필요한 경우에만)
     broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: '크레딧 잔액 확인 중...', current: 0, total: state.progress.total });
     const { balance } = await fetchCredits();
-    if (balance <= 0) throw new Error('INSUFFICIENT_CREDITS');
 
     // 2. YouTube 인증 + 자막 가져오기
     const { videoId, subtitles: sourceSubtitles, trackInfo, existingCaptions } =
@@ -321,7 +354,7 @@ async function runTranslationCredits(tabId, settings) {
     });
 
     // 3. 대상 언어 필터링
-    const { targetLangs, alreadyTranslated } = filterTargetLangs(settings, trackInfo, existingCaptions);
+    let { targetLangs, alreadyTranslated } = filterTargetLangs(settings, trackInfo, existingCaptions);
 
     if (alreadyTranslated.length > 0) {
       broadcast({
@@ -338,100 +371,134 @@ async function runTranslationCredits(tabId, settings) {
       return;
     }
 
-    // 4. 번역 job 생성
-    const { job_id } = await createTranslationJob({
-      video_id:    videoId,
-      source_lang: trackInfo.language,
-      target_langs: targetLangs,
-      model: 'gemini-2.5-flash',
-    });
-    jobId = job_id;
+    // 3-1. 이전 업로드 실패 번역 캐시 확인 → 해당 언어는 번역 생략하고 바로 업로드
+    const cached = await getSavedTranslations(videoId);
+    const cachedLangs   = cached ? targetLangs.filter(c => cached.langResults?.[c]) : [];
+    const remainingLangs = targetLangs.filter(c => !cachedLangs.includes(c));
 
-    // 5. 자막 청크 + 언어 배치 분할 → 병렬 번역
-    // 언어를 MAX_LANGS_PER_CALL개씩 나눠서 호출 → Vercel 25초 제한 준수
-    const chunkSize      = getChunkSize(targetLangs.length);
-    const subtitleChunks = chunkArray(sourceSubtitles, chunkSize);
-    const langBatches    = chunkArray(targetLangs, MAX_LANGS_PER_CALL);
-    const totalChunks    = subtitleChunks.length * langBatches.length;
+    if (cachedLangs.length > 0) {
+      broadcast({
+        type: MSG.TRANSLATION_PROGRESS,
+        langName: `💾 저장된 번역 발견 (${cachedLangs.map(c => TARGET_LANGUAGES.find(l=>l.code===c)?.name||c).join(', ')}) — 크레딧 없이 재업로드 시도`,
+        current: 0, total: targetLangs.length,
+      });
+    }
 
-    // lang → 번역 결과 배열 (청크 순서대로 누적)
-    const langResults = {};
-    for (const code of targetLangs) langResults[code] = [];
-
-    // 번역 실패한 언어 → 업로드 금지
-    const failedLangs = new Set();
-
-    let chunksCompleted = 0;
+    // 4. 신규 번역이 필요한 언어만 job 생성 + 번역 (캐시 언어는 건너뜀)
+    const langResults  = {};
+    const failedLangs  = new Set();
+    let chunksCompleted  = 0;
+    let totalChunks      = 0; // if 블록 안에서 재할당, 캐시 전용이면 0 유지
     let totalInputTokens = 0, totalOutputTokens = 0;
 
-    broadcast({
-      type: MSG.TRANSLATION_PROGRESS,
-      langName: `번역 중... (0/${totalChunks} 청크)`,
-      current: 0, total: totalChunks,
-    });
+    if (remainingLangs.length > 0) {
+      // 신규 번역이 있을 때만 잔액 검증 (캐시 재업로드는 크레딧 불필요)
+      if (balance <= 0) throw new Error('INSUFFICIENT_CREDITS');
 
-    // 자막 청크 순서대로 처리 (언어 배치는 병렬)
-    for (let si = 0; si < subtitleChunks.length; si += MAX_CONCURRENT) {
-      if (state.shouldStop) break;
+      const { job_id } = await createTranslationJob({
+        video_id:    videoId,
+        source_lang: trackInfo.language,
+        target_langs: remainingLangs,
+        model: 'gemini-2.5-flash',
+      });
+      jobId = job_id;
 
-      const subBatch = subtitleChunks.slice(si, si + MAX_CONCURRENT);
+      // 5. 자막 청크 + 언어 배치 분할 → 병렬 번역
+      const chunkSize      = getChunkSize(remainingLangs.length);
+      const subtitleChunks = chunkArray(sourceSubtitles, chunkSize);
+      const langBatches    = chunkArray(remainingLangs, MAX_LANGS_PER_CALL);
+      totalChunks          = subtitleChunks.length * langBatches.length;
 
-      // 각 자막 청크 × 각 언어 배치 = 병렬 호출
-      const callPairs = [];
-      for (let bi = 0; bi < subBatch.length; bi++) {
-        for (const langBatch of langBatches) {
-          callPairs.push({ chunk: subBatch[bi], offset: (si + bi) * chunkSize, langBatch });
-        }
-      }
+      for (const code of remainingLangs) langResults[code] = [];
 
-      const results = await Promise.allSettled(
-        callPairs.map(({ chunk, offset, langBatch }) =>
-          translateChunk({
-            job_id:       jobId,
-            subtitles:    chunk.map(s => ({ text: s.text })),
-            offset,
-            target_langs: langBatch,
-            source_lang:  sourceLangName,
-            model:        'gemini-2.5-flash',
-          })
-        )
-      );
+      broadcast({
+        type: MSG.TRANSLATION_PROGRESS,
+        langName: `번역 중... (0/${totalChunks} 청크)`,
+        current: 0, total: totalChunks,
+      });
 
-      for (let ri = 0; ri < results.length; ri++) {
-        const result   = results[ri];
-        const { chunk, langBatch } = callPairs[ri];
-
-        if (result.status === 'fulfilled') {
-          const { translations, tokens } = result.value;
-          for (const code of langBatch) {
-            langResults[code].push(...(translations[code] || chunk.map(s => s.text)));
-          }
-          totalInputTokens  += tokens?.input  || 0;
-          totalOutputTokens += tokens?.output || 0;
-        } else {
-          for (const code of langBatch) failedLangs.add(code);
-          const chunkErr = result.reason?.message || '알 수 없는 오류';
-          log(`청크 번역 실패: ${chunkErr}`, LOG_LEVEL.WARN);
-          await reportError(result.reason || new Error(chunkErr), { action: 'chunk_translate', chunk: chunksCompleted });
-        }
-
-        chunksCompleted++;
+      // Gemini 응답 대기 중 5초마다 경과 시간 안내 (사용자 불안 감소)
+      const startTime = Date.now();
+      const heartbeat = setInterval(() => {
+        if (!state.isRunning) { clearInterval(heartbeat); return; }
+        const sec = Math.round((Date.now() - startTime) / 1000);
         broadcast({
           type: MSG.TRANSLATION_PROGRESS,
-          langName: `번역 중... (${chunksCompleted}/${totalChunks} 청크)`,
+          langName: `번역 처리 중... (${sec}초 경과, AI 응답 대기)`,
           current: chunksCompleted, total: totalChunks,
         });
+      }, 5000);
+
+      for (let si = 0; si < subtitleChunks.length; si += MAX_CONCURRENT) {
+        if (state.shouldStop) break;
+
+        const subBatch = subtitleChunks.slice(si, si + MAX_CONCURRENT);
+        const callPairs = [];
+        for (let bi = 0; bi < subBatch.length; bi++) {
+          for (const langBatch of langBatches) {
+            callPairs.push({ chunk: subBatch[bi], offset: (si + bi) * chunkSize, langBatch });
+          }
+        }
+
+        const results = await Promise.allSettled(
+          callPairs.map(({ chunk, offset, langBatch }) =>
+            translateChunk({
+              job_id:       jobId,
+              subtitles:    chunk.map(s => ({ text: s.text })),
+              offset,
+              target_langs: langBatch,
+              source_lang:  sourceLangName,
+              model:        'gemini-2.5-flash',
+            })
+          )
+        );
+
+        for (let ri = 0; ri < results.length; ri++) {
+          const result   = results[ri];
+          const { chunk, langBatch } = callPairs[ri];
+
+          if (result.status === 'fulfilled') {
+            const { translations, tokens } = result.value;
+            for (const code of langBatch) {
+              langResults[code].push(...(translations[code] || chunk.map(s => s.text)));
+            }
+            totalInputTokens  += tokens?.input  || 0;
+            totalOutputTokens += tokens?.output || 0;
+          } else {
+            for (const code of langBatch) failedLangs.add(code);
+            const chunkErr = result.reason?.message || '알 수 없는 오류';
+            log(`청크 번역 실패: ${chunkErr}`, LOG_LEVEL.WARN);
+            await reportError(result.reason || new Error(chunkErr), { action: 'chunk_translate', chunk: chunksCompleted });
+          }
+
+          chunksCompleted++;
+          broadcast({
+            type: MSG.TRANSLATION_PROGRESS,
+            langName: `번역 중... (${chunksCompleted}/${totalChunks} 청크)`,
+            current: chunksCompleted, total: totalChunks,
+          });
+        }
       }
+      clearInterval(heartbeat);
     }
 
     // 6. 언어별 YouTube 업로드
+    // 업로드 대상 = 방금 번역된 언어(remainingLangs) + 캐시 복원 언어(cachedLangs)
+    const allUploadLangs  = [...remainingLangs, ...cachedLangs];
+    const allLangResults  = { ...langResults, ...(cached?.langResults || {}) };
     const errors = [];
+
     let uploadedCount = 0;
-    for (const code of targetLangs) {
+    const uploadSucceeded = []; // 캐시 삭제용
+    const uploadFailed    = []; // 캐시 저장용
+
+    for (const code of allUploadLangs) {
       if (state.shouldStop) break;
 
       const lang = TARGET_LANGUAGES.find(l => l.code === code);
       if (!lang) continue;
+
+      // 번역 단계 실패 언어는 건너뜀 (캐시 복원 언어는 failedLangs에 없음)
       if (failedLangs.has(code)) {
         errors.push({ lang: code, error: '번역 실패' });
         continue;
@@ -444,13 +511,13 @@ async function runTranslationCredits(tabId, settings) {
       });
 
       try {
-        // langResults[code]는 flat 텍스트 배열 → sourceSubtitles와 병합해 SRT 생성
         const translated = sourceSubtitles.map((s, i) => ({
           ...s,
-          text: langResults[code][i] ?? s.text,
+          text: allLangResults[code]?.[i] ?? s.text,
         }));
         await uploadCaption(videoId, lang.ytCode, subtitlesToSRT(translated), existingCaptions);
         uploadedCount++;
+        uploadSucceeded.push(code);
         broadcast({
           type: MSG.TRANSLATION_PROGRESS,
           lang: code, langName: `[${lang.name}] 완료 ✓`,
@@ -458,14 +525,22 @@ async function runTranslationCredits(tabId, settings) {
           langDone: true,
         });
       } catch (err) {
-        errors.push({ lang: lang.name, message: err.message });
-        broadcast({ type: MSG.TRANSLATION_ERROR, error: `${lang.name}: ${friendlyError(err)}`, lang: code });
+        uploadFailed.push(code);
+        const detail = getUploadErrorMessage(err, lang.name);
+        errors.push({ lang: lang.name, message: detail });
+        broadcast({ type: MSG.TRANSLATION_ERROR, error: detail, lang: code });
       }
     }
 
-    // 7. job 완료 처리 → 크레딧 차감
-    const finalStatus = state.shouldStop ? 'stopped' : 'completed';
-    await updateTranslationJob(jobId, { status: finalStatus });
+    // 업로드 성공 언어 캐시 삭제, 실패 언어 캐시 저장 (번역된 언어만)
+    await clearSavedTranslations(videoId, uploadSucceeded);
+    await saveTranslations(videoId, allLangResults, uploadFailed);
+
+    // 7. job 완료 처리 → 크레딧 차감 (신규 번역이 있었을 때만)
+    if (jobId) {
+      const finalStatus = state.shouldStop ? 'stopped' : 'completed';
+      await updateTranslationJob(jobId, { status: finalStatus });
+    }
 
     // 8. 잔여 크레딧 조회
     let creditsRemaining = 0;
@@ -477,7 +552,7 @@ async function runTranslationCredits(tabId, settings) {
     }
 
     const successCount = uploadedCount;
-    await reportTranslationResult({ videoId, errors, total: targetLangs.length, success: successCount });
+    await reportTranslationResult({ videoId, errors, total: allUploadLangs.length, success: successCount });
 
     const savedTabId   = state.tabId;
     resetState();
@@ -568,6 +643,31 @@ chrome.runtime.onInstalled.addListener(async (details) => {
   if (details.reason === 'install') chrome.runtime.openOptionsPage();
   const settings = await loadSettings();
   if (settings.sentryDsn) await initSentry(settings.sentryDsn);
+});
+
+// ── 외부 웹페이지(silver-smiths.com) → 익스텐션 통신 ─────────────────────────
+// manifest.json의 externally_connectable로 silver-smiths.com만 허용
+chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+  if (sender.origin !== 'https://silver-smiths.com') return;
+
+  if (message.type === 'YTAT_REQUEST_CHECKOUT') {
+    const { amount, currency } = message;
+    createCheckout(amount, currency)
+      .then(data => sendResponse({ ok: true, orderId: data.order_id }))
+      .catch(err => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
+  if (message.type === 'YTAT_GET_AUTH_TOKEN') {
+    chrome.identity.getAuthToken({ interactive: false }, (token) => {
+      if (chrome.runtime.lastError || !token) {
+        sendResponse({ ok: false });
+      } else {
+        sendResponse({ ok: true, token });
+      }
+    });
+    return true;
+  }
 });
 
 console.log('[YT-Auto-Translator] Service worker v2 초기화 완료');
