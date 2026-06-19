@@ -174,6 +174,111 @@ async function checkAdminStatus() {
   }
 }
 
+// ── 공지사항 ──────────────────────────────────────────────────────────────────
+const btnNotice       = document.getElementById('btnNotice');
+const noticeBadge     = document.getElementById('noticeBadge');
+const noticeModal     = document.getElementById('noticeModal');
+const noticeClose     = document.getElementById('noticeClose');
+const noticeList      = document.getElementById('noticeList');
+const noticeDetail    = document.getElementById('noticeDetail');
+const noticeBack      = document.getElementById('noticeBack');
+const noticeDetailTitle = document.getElementById('noticeDetailTitle');
+const noticeDetailBody  = document.getElementById('noticeDetailBody');
+const noticePagination  = document.getElementById('noticePagination');
+
+let noticePage = 1;
+let noticeTotalPages = 1;
+let readIds = new Set();
+
+async function initNotices() {
+  const { readNoticeIds = [] } = await chrome.storage.local.get('readNoticeIds');
+  readIds = new Set(readNoticeIds);
+  try {
+    const res = await fetch(`${API_BASE}/notices?page=1`);
+    if (!res.ok) return;
+    const { notices } = await res.json();
+    const hasUnread = notices.some(n => !readIds.has(String(n.id)));
+    noticeBadge.style.display = hasUnread ? 'flex' : 'none';
+  } catch { /* 네트워크 오류는 조용히 무시 */ }
+}
+
+async function loadNoticeList(page = 1) {
+  noticeDetail.style.display = 'none';
+  noticeList.style.display = '';
+  noticePagination.style.display = '';
+  noticeList.innerHTML = '<li style="padding:24px;text-align:center;color:#aaa;list-style:none;">로딩 중...</li>';
+
+  try {
+    const res = await fetch(`${API_BASE}/notices?page=${page}`);
+    if (!res.ok) throw new Error();
+    const { notices, totalPages } = await res.json();
+    noticePage = page;
+    noticeTotalPages = totalPages || 1;
+
+    if (!notices.length) {
+      noticeList.innerHTML = '<li style="padding:24px;text-align:center;color:#aaa;list-style:none;">공지사항이 없습니다.</li>';
+    } else {
+      noticeList.innerHTML = notices.map(n => {
+        const isRead = readIds.has(String(n.id));
+        const date = n.created_at.slice(0, 10);
+        return `<li class="notice-item ${isRead ? 'read' : 'unread'}" data-id="${n.id}">
+          <span class="notice-item-title">${n.title}</span>
+          <span class="notice-item-date">${date}</span>
+        </li>`;
+      }).join('');
+      noticeList.querySelectorAll('.notice-item').forEach(el => {
+        el.addEventListener('click', () => openNoticeDetail(el.dataset.id));
+      });
+    }
+    renderNoticePagination();
+  } catch {
+    noticeList.innerHTML = '<li style="padding:24px;text-align:center;color:#f87171;list-style:none;">불러오기 실패</li>';
+  }
+}
+
+async function openNoticeDetail(id) {
+  noticeList.style.display = 'none';
+  noticePagination.style.display = 'none';
+  noticeDetail.style.display = '';
+  noticeDetailTitle.textContent = '로딩 중...';
+  noticeDetailBody.textContent = '';
+
+  try {
+    const res = await fetch(`${API_BASE}/notices/${id}`);
+    if (!res.ok) throw new Error();
+    const notice = await res.json();
+    noticeDetailTitle.textContent = notice.title;
+    noticeDetailBody.textContent = notice.body;
+
+    readIds.add(String(id));
+    await chrome.storage.local.set({ readNoticeIds: [...readIds] });
+    await initNotices();
+  } catch {
+    noticeDetailTitle.textContent = '불러오기 실패';
+  }
+}
+
+function renderNoticePagination() {
+  if (noticeTotalPages <= 1) { noticePagination.innerHTML = ''; return; }
+  noticePagination.innerHTML = `
+    <button class="notice-page-btn" id="noticePrev" ${noticePage <= 1 ? 'disabled' : ''}>← 이전</button>
+    <span>${noticePage} / ${noticeTotalPages}</span>
+    <button class="notice-page-btn" id="noticeNext" ${noticePage >= noticeTotalPages ? 'disabled' : ''}>다음 →</button>
+  `;
+  noticePagination.querySelector('#noticePrev')?.addEventListener('click', () => loadNoticeList(noticePage - 1));
+  noticePagination.querySelector('#noticeNext')?.addEventListener('click', () => loadNoticeList(noticePage + 1));
+}
+
+btnNotice.addEventListener('click', () => {
+  noticeModal.style.display = 'flex';
+  loadNoticeList(1);
+});
+noticeClose.addEventListener('click', () => { noticeModal.style.display = 'none'; });
+noticeBack.addEventListener('click', () => { loadNoticeList(noticePage); });
+noticeModal.addEventListener('click', e => { if (e.target === noticeModal) noticeModal.style.display = 'none'; });
+
+initNotices();
+
 // ── 모델 옵션 빌드 ────────────────────────────────────────────────────────────
 function buildModelOptions(selected) {
   modelSelect.innerHTML = '';
