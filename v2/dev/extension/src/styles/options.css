@@ -380,7 +380,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
 
 .btn-admin {
   position: fixed;
-  bottom: 152px; /* 88 + 44(feedback height) + 20px gap */
+  bottom: 216px; /* 공지 위 20px */
   right: max(20px, calc(50% - 300px));
   width: 44px;
   height: 44px;
@@ -422,7 +422,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
 /* ── 공지사항 플로팅 버튼 ── */
 .btn-notice {
   position: fixed;
-  bottom: 216px; /* 152(admin) + 44(admin height) + 20px gap */
+  bottom: 152px; /* 88(feedback) + 44(feedback height) + 20px gap */
   right: max(20px, calc(50% - 300px));
   width: 44px;
   height: 44px;
