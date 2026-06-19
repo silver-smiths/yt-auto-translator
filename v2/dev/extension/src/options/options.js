@@ -99,6 +99,7 @@ function applyMode(mode) {
     btnSelectAll.disabled = false;
 
     fetchCreditBalance();
+    checkAdminStatus();
   } else {
     speedSection.style.display = '';
 
@@ -150,6 +151,28 @@ async function fetchCreditBalance() {
 btnTopup.addEventListener('click', () => {
   chrome.tabs.create({ url: PAYMENT_URL });
 });
+
+// ── 관리자 버튼 노출 ──────────────────────────────────────────────────────────
+async function checkAdminStatus() {
+  try {
+    const token = await new Promise((resolve, reject) => {
+      chrome.identity.getAuthToken({ interactive: false }, (t) => {
+        if (chrome.runtime.lastError || !t) reject(new Error('auth'));
+        else resolve(t);
+      });
+    });
+
+    const res = await fetch(`${API_BASE}/admin/check`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      const btnAdmin = document.getElementById('btnAdmin');
+      if (btnAdmin) btnAdmin.style.display = 'flex';
+    }
+  } catch {
+    // 어드민 아니면 조용히 무시
+  }
+}
 
 // ── 모델 옵션 빌드 ────────────────────────────────────────────────────────────
 function buildModelOptions(selected) {
