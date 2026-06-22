@@ -323,6 +323,33 @@ async function _updateCaption(captionId, langCode, srtContent) {
 // SRT 파싱 / 생성
 // =============================================
 
+// =============================================
+// Public API — 제목/설명 다국어 업데이트
+// =============================================
+
+/**
+ * 영상의 YouTube localizations 업데이트 (기존 값에 병합)
+ * localizations: { 'en': { title: '...', description: '...' }, 'ja': { ... } }
+ */
+export async function updateVideoLocalizations(videoId, newLocalizations) {
+  // GET 기존 localizations (PUT은 전체 교체이므로 먼저 읽어서 병합)
+  const getRes = await apiFetch(`${YT_API_BASE}/videos?part=localizations&id=${videoId}`);
+  const getData = await getRes.json();
+  const existing = getData.items?.[0]?.localizations || {};
+
+  const merged = { ...existing };
+  for (const [lang, data] of Object.entries(newLocalizations)) {
+    merged[lang] = { ...(existing[lang] || {}), ...data };
+  }
+
+  const updateRes = await apiFetch(`${YT_API_BASE}/videos?part=localizations`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: videoId, localizations: merged }),
+  });
+  return updateRes.json();
+}
+
 /**
  * SRT 텍스트 파싱 → 내부 포맷으로 변환
  */

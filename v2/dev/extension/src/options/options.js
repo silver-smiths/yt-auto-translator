@@ -28,9 +28,12 @@ const langGrid         = document.getElementById('langGrid');
 const langNotice       = document.getElementById('langNotice');
 const btnSelectAll     = document.getElementById('btnSelectAll');
 const btnDeselectAll   = document.getElementById('btnDeselectAll');
-const speedSection     = document.getElementById('speedSection');
-const btnSave          = document.getElementById('btnSave');
-const saveStatus       = document.getElementById('saveStatus');
+const speedSection          = document.getElementById('speedSection');
+const translateSubtitlesCb  = document.getElementById('translateSubtitles');
+const translateTitleCb      = document.getElementById('translateTitle');
+const translateDescCb       = document.getElementById('translateDescription');
+const btnSave               = document.getElementById('btnSave');
+const saveStatus            = document.getElementById('saveStatus');
 
 let currentMode = TRANSLATION_MODES.API_KEY;
 let selectedLangs = new Set();
@@ -386,6 +389,11 @@ async function init() {
   buildModelOptions(settings.selectedModel);
   buildSourceLang(settings.sourceLang);
 
+  // 번역 대상
+  translateSubtitlesCb.checked = settings.translateSubtitles !== false;
+  translateTitleCb.checked     = !!settings.translateTitle;
+  translateDescCb.checked      = !!settings.translateDescription;
+
   // 모드 UI 적용 (buildLangGrid 포함)
   applyMode(mode);
 }
@@ -400,11 +408,14 @@ btnSave.addEventListener('click', async () => {
   const settings = await loadSettings();
   const updated = {
     ...settings,
-    translationMode: currentMode,
-    geminiApiKey:    apiKeyInput.value.trim(),
-    selectedModel:   modelSelect.value,
-    sourceLang:      sourceLang.value,
-    targetLangs:     Array.from(selectedLangs),
+    translationMode:      currentMode,
+    geminiApiKey:         apiKeyInput.value.trim(),
+    selectedModel:        modelSelect.value,
+    sourceLang:           sourceLang.value,
+    targetLangs:          Array.from(selectedLangs),
+    translateSubtitles:   translateSubtitlesCb.checked,
+    translateTitle:       translateTitleCb.checked,
+    translateDescription: translateDescCb.checked,
   };
 
   await saveSettings(updated);

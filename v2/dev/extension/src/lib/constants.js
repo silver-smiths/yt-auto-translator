@@ -69,12 +69,15 @@ export function getChunkSize(langCount) {
 
 // ── 기본 설정값 ───────────────────────────────────────────────────────────────
 export const DEFAULT_SETTINGS = {
-  translationMode:  TRANSLATION_MODES.API_KEY,
-  geminiApiKey:     '',
-  selectedModel:    'gemini-2.5-flash',
-  sourceLang:       'auto',
-  targetLangs:      TARGET_LANGUAGES.map(l => l.code).filter(c => c !== 'ko'),
-  welcomeDismissed: false,
+  translationMode:      TRANSLATION_MODES.API_KEY,
+  geminiApiKey:         '',
+  selectedModel:        'gemini-2.5-flash',
+  sourceLang:           'auto',
+  targetLangs:          TARGET_LANGUAGES.map(l => l.code).filter(c => c !== 'ko'),
+  welcomeDismissed:     false,
+  translateSubtitles:   true,
+  translateTitle:       false,
+  translateDescription: false,
 };
 
 // ── 메시지 타입 ───────────────────────────────────────────────────────────────

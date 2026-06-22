@@ -124,6 +124,35 @@ const CSS = `
 .s-bar-bg { height: 5px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; }
 .s-bar-fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg,#BB86FC,#03DAC6); transition: width 0.3s; }
 
+/* ── 로딩 스피너 ── */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border: 1.5px solid rgba(187,134,252,0.3);
+  border-top-color: #BB86FC;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-right: 5px;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+.s-progress-label {
+  display: flex; align-items: center;
+}
+
+@keyframes bar-sweep {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -100% 0; }
+}
+.s-bar-fill.running {
+  min-width: 6%;
+  background: linear-gradient(90deg, #6B3FBF, #BB86FC, #03DAC6, #BB86FC, #6B3FBF);
+  background-size: 300% 100%;
+  animation: bar-sweep 2s linear infinite;
+  transition: none;
+}
+
 /* ── 언어 칩 ── */
 .s-chips {
   padding: 8px 14px;
@@ -337,7 +366,10 @@ function buildSidebarHTML() {
 
     <div class="s-progress" id="progress-section" style="display:none">
       <div class="s-progress-info">
-        <span>번역 진행률</span>
+        <span class="s-progress-label">
+          <span class="spinner" id="progress-spinner" style="display:none"></span>
+          <span id="progress-label">번역 진행률</span>
+        </span>
         <span id="progress-pct">0%</span>
       </div>
       <div class="s-bar-bg"><div class="s-bar-fill" id="progress-bar" style="width:0%"></div></div>
@@ -574,11 +606,19 @@ function setRunning(running, targetLangs = []) {
   const progressSection = shadow.getElementById('progress-section');
   const chipsSection = shadow.getElementById('chips-section');
 
+  const bar     = shadow.getElementById('progress-bar');
+  const spinner = shadow.getElementById('progress-spinner');
+  const label   = shadow.getElementById('progress-label');
+
   if (running) {
     btn.className = 'btn-stop';
     btn.innerHTML = '■&nbsp; 번역 중지';
     progressSection.style.display = 'block';
     chipsSection.style.display = 'flex';
+    bar.classList.add('running');
+    bar.style.width = '0%';
+    if (spinner) spinner.style.display = 'inline-block';
+    if (label)   label.textContent = '번역 처리 중...';
 
     langChipState = {};
     targetLangs.forEach(code => { langChipState[code] = 'pending'; });
@@ -589,6 +629,9 @@ function setRunning(running, targetLangs = []) {
     btn.innerHTML = '▶&nbsp; 번역 시작';
     progressSection.style.display = 'none';
     chipsSection.style.display = 'none';
+    bar.classList.remove('running');
+    if (spinner) spinner.style.display = 'none';
+    if (label)   label.textContent = '번역 진행률';
     langChipState = {};
   }
 }
@@ -613,9 +656,25 @@ function renderChips() {
   });
 }
 
-function updateProgress(pct) {
-  shadow.getElementById('progress-pct').textContent = `${Math.round(pct)}%`;
-  shadow.getElementById('progress-bar').style.width = `${pct}%`;
+function updateProgress(pct, current, total) {
+  const bar     = shadow.getElementById('progress-bar');
+  const pctEl   = shadow.getElementById('progress-pct');
+  const label   = shadow.getElementById('progress-label');
+  const spinner = shadow.getElementById('progress-spinner');
+
+  if (pct > 0) {
+    bar.classList.remove('running'); // sweep → 확정 바 전환
+    bar.style.width = `${pct}%`;
+  }
+  pctEl.textContent = `${Math.round(pct)}%`;
+
+  // 청크 수 표시
+  if (total > 0) {
+    if (label) label.textContent = `청크 ${current}/${total}`;
+  }
+
+  // 100% 완료 시 스피너 숨김
+  if (pct >= 100 && spinner) spinner.style.display = 'none';
 }
 
 // ── 로그 저장/복원 ───────────────────────────────────────────────────────────
@@ -729,7 +788,11 @@ function setupMessageListener() {
           langChipState[msg.lang] = 'active';
           renderChips();
         }
-        if (msg.percent != null) updateProgress(msg.percent);
+        if (msg.percent != null) {
+          updateProgress(msg.percent, msg.current, msg.total);
+        } else if (msg.current != null && msg.total > 0) {
+          updateProgress((msg.current / msg.total) * 100, msg.current, msg.total);
+        }
         if (msg.message) addLog('info', 'INFO', msg.message);
         break;
       }

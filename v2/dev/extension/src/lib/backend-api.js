@@ -46,6 +46,17 @@ export async function translateChunk(params) {
   return res.json(); // { translations, model_used, tokens }
 }
 
+export async function createCheckout(amount, currency) {
+  const headers = await authHeaders();
+  const res = await fetch(`${API_BASE}/credits/checkout`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ amount, currency }),
+  });
+  if (!res.ok) throw new Error(`CHECKOUT_FAILED_${res.status}`);
+  return res.json(); // { payment_id, order_id, amount, currency }
+}
+
 export async function updateTranslationJob(jobId, params) {
   const headers = await authHeaders();
   await fetch(`${API_BASE}/translate/job/${jobId}`, {
