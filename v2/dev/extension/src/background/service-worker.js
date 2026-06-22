@@ -202,8 +202,8 @@ function filterTargetLangs(settings, trackInfo, existingCaptions) {
 
 async function translateMetadataApiKey({ apiKey, model, sourceLang, targetLangName, title, description }) {
   const schema = { type: 'object', properties: {}, required: [] };
-  const promptParts = [`Translate to ${targetLangName}:`];
-  if (title)       { promptParts.push(`Title: ${title}`);              schema.properties.title = { type: 'string' };       schema.required.push('title');       }
+  const promptParts = [`Translate from ${sourceLang} to ${targetLangName}:`];
+  if (title)       { promptParts.push(`Title: ${title}`);              schema.properties.title       = { type: 'string' }; schema.required.push('title');       }
   if (description) { promptParts.push(`Description:\n${description}`); schema.properties.description = { type: 'string' }; schema.required.push('description'); }
   promptParts.push('\nReturn ONLY the JSON object, no explanation.');
 
@@ -218,6 +218,12 @@ async function translateMetadataApiKey({ apiKey, model, sourceLang, targetLangNa
       }),
     }
   );
+
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}));
+    throw new Error(`Gemini API 오류 (${res.status}): ${errBody?.error?.message || '알 수 없는 오류'}`);
+  }
+
   const data = await res.json();
   const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
   return JSON.parse(text || '{}');
