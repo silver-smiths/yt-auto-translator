@@ -59,9 +59,10 @@ export async function createCheckout(amount, currency) {
 
 export async function updateTranslationJob(jobId, params) {
   const headers = await authHeaders();
-  await fetch(`${API_BASE}/translate/job/${jobId}`, {
+  const res = await fetch(`${API_BASE}/translate/job/${jobId}`, {
     method:  'PATCH',
     headers,
     body: JSON.stringify(params),
   });
+  if (!res.ok) throw new Error(`UPDATE_JOB_FAILED_${res.status}`);
 }
