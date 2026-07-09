@@ -5,12 +5,11 @@ import { INPUT_PER_M, OUTPUT_PER_M, CREDIT_MULTIPLIER, MAX_SUBTITLES, MAX_TARGET
 const app = new Hono();
 
 const GEMINI_V1BETA = 'https://generativelanguage.googleapis.com/v1beta';
-const GEMINI_V1     = 'https://generativelanguage.googleapis.com/v1';
 
 const FALLBACK_CHAIN = [
   { model: 'gemini-2.5-flash', timeoutMs: 25_000, split: false, base: GEMINI_V1BETA },
   { model: 'gemini-2.5-flash', timeoutMs: 18_000, split: true,  base: GEMINI_V1BETA }, // 절반 분할 병렬 재시도
-  { model: 'gemini-1.5-flash', timeoutMs: 12_000, split: false, base: GEMINI_V1     }, // v1 최종 시도
+  { model: 'gemini-2.5-flash-lite', timeoutMs: 12_000, split: false, base: GEMINI_V1BETA }, // 경량 모델 최종 시도 (1.5-flash는 서비스 종료)
 ];
 
 // ── 프롬프트 빌드 ──────────────────────────────────────────────────────────────
@@ -85,6 +84,7 @@ async function callGemini(env, model, subtitles, offset, targetLangs, sourceLang
             maxOutputTokens:  65536,
             responseMimeType: 'application/json',
             responseSchema:   schema,
+            thinkingConfig:   { thinkingBudget: 0 }, // 번역엔 불필요 — thinking 토큰($2.50/M) 비용 차단
           },
           safetySettings: [
             { category: 'HARM_CATEGORY_HARASSMENT',        threshold: 'BLOCK_NONE' },
@@ -120,8 +120,9 @@ async function callGemini(env, model, subtitles, offset, targetLangs, sourceLang
     }
 
     const repairedTranslations = validateAndRepair(json, subtitles, targetLangs);
-    const inputTokens  = usage.promptTokenCount     || 0;
-    const outputTokens = usage.candidatesTokenCount || 0;
+    const inputTokens  = usage.promptTokenCount || 0;
+    // thinking 토큰도 출력 단가로 과금되므로 합산 (thinkingBudget: 0이어도 방어적으로 포함)
+    const outputTokens = (usage.candidatesTokenCount || 0) + (usage.thoughtsTokenCount || 0);
 
     // 번역 품질 검증: 단 1줄도 원본과 동일하면 폴백 트리거 (언어 문자 기준 비교)
     // 단, 사용된 토큰은 반환해 과금에 포함 (failed: 'quality' 플래그)
