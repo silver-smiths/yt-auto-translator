@@ -15,8 +15,7 @@
     "https://studio.youtube.com/*",
     "https://www.googleapis.com/*",
     "https://generativelanguage.googleapis.com/*",
-    "https://*.workers.dev/*",
-    "https://backend-three-alpha-60.vercel.app/*"
+    "https://*.workers.dev/*"
   ],
   "externally_connectable": {
     "matches": ["https://silver-smiths.com/*"]

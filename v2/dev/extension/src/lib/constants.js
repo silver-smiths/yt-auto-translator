@@ -56,7 +56,7 @@ export const RATE_CONFIGS = {
 };
 
 // ── 백엔드 API ────────────────────────────────────────────────────────────────
-export const API_BASE = 'https://backend-three-alpha-60.vercel.app';
+export const API_BASE = 'https://yt-auto-translator-api.1009yjh.workers.dev';
 export const PAYMENT_URL = 'https://silver-smiths.com/project/ytat-credits.html';
 
 // ── 언어 수 기반 동적 청크 크기 (크레딧 모드) ─────────────────────────────────
