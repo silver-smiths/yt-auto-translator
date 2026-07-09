@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { getSupabase } from '../lib/supabase.js';
-import { INPUT_PER_M, OUTPUT_PER_M, CREDIT_MULTIPLIER, MAX_SUBTITLES, MAX_TARGET_LANGS } from '../lib/constants.js';
+import { INPUT_PER_M, OUTPUT_PER_M, CREDIT_MULTIPLIER, MAX_SUBTITLES, MAX_TARGET_LANGS, OVERDRAFT_USD } from '../lib/constants.js';
 
 const app = new Hono();
 
@@ -223,14 +223,15 @@ app.post('/chunk', async (c) => {
     return c.json({ error: 'JOB_NOT_ACTIVE' }, 409);
   }
 
-  // 잔액 사전 확인 — 이 job에 누적된 미차감 요금까지 반영 (잔액 소진 후 무한 호출 방지)
+  // 잔액 사전 확인 — 이 job에 누적된 미차감 요금까지 반영.
+  // 시작된 작업이 잔액 소진 직후 끊기지 않도록 OVERDRAFT_USD만큼 초과 허용 (초과분은 마이너스 잔액으로 차감됨)
   const { data: account } = await sb
     .from('credit_accounts')
     .select('balance')
     .eq('user_id', userId)
     .single();
 
-  if (!account || account.balance <= (job.credits_charged || 0)) {
+  if (!account || account.balance + OVERDRAFT_USD <= (job.credits_charged || 0)) {
     return c.json({ error: 'INSUFFICIENT_CREDITS' }, 402);
   }
 
@@ -270,6 +271,17 @@ app.post('/job', async (c) => {
   const { video_id, job_type, source_lang, target_langs, model } = await c.req.json();
 
   const sb = getSupabase(c.env);
+
+  // 잔액이 0 이하(마이너스 부채 포함)면 새 작업 시작 거부 — overdraft 반복 악용 차단
+  const { data: account } = await sb
+    .from('credit_accounts')
+    .select('balance')
+    .eq('user_id', userId)
+    .single();
+
+  if (!account || account.balance <= 0) {
+    return c.json({ error: 'INSUFFICIENT_CREDITS' }, 402);
+  }
   const { data, error } = await sb
     .from('translation_jobs')
     .insert({
