@@ -14,13 +14,28 @@ export async function authMiddleware(c, next) {
   const token = authHeader.slice(7);
 
   // Google tokeninfo로 검증
-  const res = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${token}`);
-  if (!res.ok) {
-    return c.json({ error: 'INVALID_TOKEN' }, 401);
+  let info;
+  try {
+    const res = await fetch(`https://www.googleapis.com/oauth2/v3/tokeninfo?access_token=${token}`);
+    if (!res.ok) {
+      return c.json({ error: 'INVALID_TOKEN' }, 401);
+    }
+    info = await res.json();
+  } catch {
+    return c.json({ error: 'AUTH_SERVICE_UNAVAILABLE' }, 503);
   }
-  const info = await res.json();
 
   if (!info.sub || !info.email) {
+    return c.json({ error: 'INVALID_TOKEN' }, 401);
+  }
+
+  // aud 검증: 우리 앱에서 발급된 토큰인지 확인
+  const expectedClientId = c.env.GOOGLE_CLIENT_ID;
+  if (!expectedClientId) {
+    console.error('[auth] GOOGLE_CLIENT_ID 환경변수 미설정');
+    return c.json({ error: 'SERVER_MISCONFIGURED' }, 500);
+  }
+  if (info.aud !== expectedClientId) {
     return c.json({ error: 'INVALID_TOKEN' }, 401);
   }
 
@@ -43,7 +58,7 @@ export async function authMiddleware(c, next) {
   // credit_accounts가 없으면 생성
   await sb
     .from('credit_accounts')
-    .upsert({ user_id: user.id }, { onConflict: 'user_id', ignoreDuplicates: true });
+    .upsert({ user_id: user.id }, { onConflict: 'user_id' });
 
   c.set('userId', user.id);
   c.set('email',  user.email);

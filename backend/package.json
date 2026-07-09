@@ -2,15 +2,17 @@
   "name": "yt-auto-translator-api",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "dev":    "wrangler dev",
+    "dev": "wrangler dev",
     "deploy": "wrangler deploy"
   },
   "dependencies": {
-    "hono":        "^4.0.0",
-    "@supabase/supabase-js": "^2.39.0"
+    "@supabase/supabase-js": "^2.39.0",
+    "hono": "^4.0.0"
   },
   "devDependencies": {
+    "vercel": "^54.7.1",
     "wrangler": "^3.0.0"
   }
 }

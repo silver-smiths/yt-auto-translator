@@ -1,13 +1,22 @@
 import { Hono } from 'hono';
 import { getSupabase } from '../lib/supabase.js';
+import { KRW_TO_USD_RATE } from '../lib/constants.js';
 
 const app = new Hono();
 
-const GEMINI_INPUT_PER_M  = 0.075;
-const GEMINI_OUTPUT_PER_M = 0.30;
-
 // ── Portone 결제 완료 웹훅 ───────────────────────────────
 app.post('/portone', async (c) => {
+  // 웹훅 시크릿 검증 (Portone V1은 URL ?secret= 방식만 지원)
+  const expectedSecret = c.env.PORTONE_WEBHOOK_SECRET;
+  if (!expectedSecret) {
+    console.error('[webhook] PORTONE_WEBHOOK_SECRET 미설정');
+    return c.json({ error: 'SERVER_MISCONFIGURED' }, 500);
+  }
+  const receivedSecret = c.req.query('secret');
+  if (receivedSecret !== expectedSecret) {
+    return c.json({ error: 'UNAUTHORIZED' }, 401);
+  }
+
   const body = await c.req.json();
   const { imp_uid, merchant_uid, status } = body;
 
@@ -16,9 +25,19 @@ app.post('/portone', async (c) => {
   }
 
   // Portone API로 결제 검증 (위조 방지)
+  const portoneToken = await getPortoneToken(c.env);
+  if (!portoneToken) {
+    console.error('[webhook] Portone 토큰 발급 실패');
+    return c.json({ error: 'PORTONE_AUTH_FAILED' }, 502);
+  }
+
   const verifyRes = await fetch(`https://api.iamport.kr/payments/${imp_uid}`, {
-    headers: { Authorization: `Bearer ${await getPortoneToken(c.env)}` }
+    headers: { Authorization: `Bearer ${portoneToken}` }
   });
+  if (!verifyRes.ok) {
+    console.error(`[webhook] Portone 결제 조회 실패: ${verifyRes.status}`);
+    return c.json({ error: 'PORTONE_VERIFY_FAILED' }, 502);
+  }
   const verifyData = await verifyRes.json();
 
   if (verifyData.response?.status !== 'paid') {
@@ -27,7 +46,8 @@ app.post('/portone', async (c) => {
 
   const sb = getSupabase(c.env);
 
-  // pending 결제 조회
+  // pending 결제 조회 (금액 검증 전에 먼저 불러옴)
+
   const { data: payment } = await sb
     .from('payments')
     .select('*')
@@ -37,22 +57,47 @@ app.post('/portone', async (c) => {
 
   if (!payment) return c.json({ ok: true }); // 이미 처리됨
 
-  const amountUsd = payment.currency === 'USD'
-    ? payment.amount_paid
-    : payment.amount_paid / 1350;
+  // 결제 금액 일치 검증 (위변조 방지)
+  if (Math.abs(verifyData.response.amount - payment.amount_paid) > 1) {
+    return c.json({ error: 'AMOUNT_MISMATCH' }, 400);
+  }
 
-  // 결제 상태 업데이트
-  await sb
-    .from('payments')
-    .update({ status: 'completed', credits_granted: amountUsd, updated_at: new Date().toISOString() })
-    .eq('id', payment.id);
+  const amountUsd = payment.amount_usd ?? (
+    payment.currency === 'USD' ? payment.amount_paid : payment.amount_paid / KRW_TO_USD_RATE
+  );
 
-  // 크레딧 지급 (원자적 처리 — Supabase RPC)
-  await sb.rpc('grant_credits', {
+  // 크레딧 지급 (원자적 처리 — RPC가 payments status도 pending → completed로 갱신)
+  // 주의: 여기서 status를 먼저 completed로 바꾸면 RPC의 멱등성 체크에 걸려 지급이 스킵됨
+  const { error: grantError } = await sb.rpc('grant_credits', {
     p_user_id:    payment.user_id,
     p_payment_id: payment.id,
     p_amount_usd: amountUsd
   });
+
+  if (grantError) {
+    console.error('[webhook] grant_credits 실패:', grantError.message, { payment_id: payment.id });
+    // payments는 여전히 pending → Portone 웹훅 재전송 시 재시도 가능
+    return c.json({ error: 'GRANT_FAILED' }, 500);
+  }
+
+  // 지급 성공 후 부가 필드 기록
+  await sb
+    .from('payments')
+    .update({ credits_granted: amountUsd, updated_at: new Date().toISOString() })
+    .eq('id', payment.id);
+
+  // 텔레그램 결제 알림 🎉
+  const amountDisplay = payment.currency === 'KRW'
+    ? `₩${Number(payment.amount_paid).toLocaleString('ko-KR')}`
+    : `$${Number(payment.amount_paid).toFixed(2)}`;
+  const time = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+
+  await sendTelegram(c.env, c.env.TELEGRAM_PAYMENT_THREAD_ID,
+    `🎉 *[YTAT] 결제 완료!*\n\n` +
+    `💰 금액: ${amountDisplay} → *$${amountUsd.toFixed(2)}* 크레딧\n` +
+    `🪪 user\\_id: \`${payment.user_id}\`\n` +
+    `🕐 ${time}`
+  ).catch(() => {}); // 알림 실패가 결제 응답에 영향주면 안 됨
 
   return c.json({ ok: true });
 });
@@ -67,8 +112,35 @@ async function getPortoneToken(env) {
       imp_secret: env.PORTONE_IMP_SECRET
     })
   });
+  if (!res.ok) {
+    console.error(`[webhook] Portone 토큰 요청 실패: ${res.status}`);
+    return null;
+  }
   const data = await res.json();
-  return data.response?.access_token;
+  return data.response?.access_token ?? null;
+}
+
+// ── 텔레그램 메시지 전송 ──────────────────────────────────
+async function sendTelegram(env, threadId, text) {
+  if (!env.TELEGRAM_BOT_TOKEN || !env.TELEGRAM_CHAT_ID) return;
+
+  const payload = {
+    chat_id:    env.TELEGRAM_CHAT_ID,
+    text,
+    parse_mode: 'Markdown',
+  };
+  if (threadId) payload.message_thread_id = parseInt(threadId, 10);
+
+  const res = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(`Telegram API 오류: ${err.description || res.status}`);
+  }
 }
 
 export default app;

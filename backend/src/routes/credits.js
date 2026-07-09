@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { getSupabase } from '../lib/supabase.js';
+import { KRW_TO_USD_RATE } from '../lib/constants.js';
 
 const app = new Hono();
 
@@ -10,17 +11,15 @@ app.get('/', async (c) => {
 
   const { data, error } = await sb
     .from('credit_accounts')
-    .select('balance, cumulative_used, tier')
+    .select('balance, cumulative_used')
     .eq('user_id', userId)
     .single();
 
   if (error) return c.json({ error: 'SERVER_ERROR' }, 500);
 
   return c.json({
-    balance:        parseFloat(data.balance),
+    balance:         parseFloat(data.balance),
     cumulative_used: parseFloat(data.cumulative_used),
-    tier:           data.tier,
-    multiplier:     data.tier === 'heavy' ? 1.1 : data.tier === 'standard' ? 1.2 : 1.3
   });
 });
 
@@ -28,6 +27,14 @@ app.get('/', async (c) => {
 app.post('/checkout', async (c) => {
   const userId = c.get('userId');
   const { amount, currency } = await c.req.json();
+
+  // 입력값 검증
+  if (typeof amount !== 'number' || amount <= 0 || !Number.isFinite(amount)) {
+    return c.json({ error: '유효하지 않은 금액입니다.' }, 400);
+  }
+  if (!['USD', 'KRW'].includes(currency)) {
+    return c.json({ error: '지원하지 않는 통화입니다. (USD, KRW만 허용)' }, 400);
+  }
 
   // 최소 충전 금액 검증
   const minUSD = 10;
@@ -53,7 +60,7 @@ app.post('/checkout', async (c) => {
       pg_provider: currency === 'KRW' ? 'toss' : 'stripe',
       amount_paid: amount,
       currency,
-      amount_usd:       currency === 'USD' ? amount : amount / 1350, // 고정 환율 (실서비스에선 실시간 환율 API 사용)
+      amount_usd:       currency === 'USD' ? amount : amount / KRW_TO_USD_RATE,
       credits_granted:  0, // 웹훅 수신 후 업데이트
       status:     'pending'
     })
