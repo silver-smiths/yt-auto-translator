@@ -476,7 +476,7 @@ async function runTranslationCredits(tabId, settings) {
   try {
     // 1. 잔액 조회 (실제 검증은 신규 번역이 필요한 경우에만)
     broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: '크레딧 잔액 확인 중...', current: 0, total: state.progress.total });
-    const { balance } = await fetchCredits();
+    const { balance, pricing } = await fetchCredits();
 
     // 2. YouTube 인증 + 자막 가져오기
     const { videoId, videoSnippet, subtitles: sourceSubtitles, trackInfo, existingCaptions } =
@@ -516,7 +516,31 @@ async function runTranslationCredits(tabId, settings) {
     const cached = await getSavedTranslations(videoId);
     // 원본 자막 개수와 일치하는 캐시만 복원 (자막 수정 후 재시도 시 인덱스 엇갈림 방지)
     const cachedLangs   = cached ? targetLangs.filter(c => cached.langResults?.[c]?.length === sourceSubtitles.length) : [];
-    const remainingLangs = targetLangs.filter(c => !cachedLangs.includes(c));
+    let remainingLangs = targetLangs.filter(c => !cachedLangs.includes(c));
+
+    // 3-2. 시작 전 비용 추정 — 잔액으로 감당 가능한 언어 수만 번역
+    if (remainingLangs.length > 0 && pricing) {
+      const totalChars   = sourceSubtitles.reduce((s, x) => s + (x.text?.length || 0), 0);
+      const estTokens    = Math.ceil(totalChars * 1.2); // 보수적 토큰 추정 (한국어 1자 ≈ 1토큰 + 여유분)
+      // 입력은 언어 3개씩 배치로 공유, 출력은 언어당 원문 분량만큼 발생
+      const estCostPerLang =
+        ((estTokens / MAX_LANGS_PER_CALL + 500) * pricing.input_per_m + estTokens * pricing.output_per_m)
+        / 1_000_000 * pricing.multiplier;
+
+      const affordable = Math.floor(balance / estCostPerLang);
+      if (affordable <= 0) throw new Error('INSUFFICIENT_CREDITS');
+      if (affordable < remainingLangs.length) {
+        const kept    = remainingLangs.slice(0, affordable);
+        const dropped = remainingLangs.slice(affordable)
+          .map(c => TARGET_LANGUAGES.find(l => l.code === c)?.name || c);
+        remainingLangs = kept;
+        broadcast({
+          type: MSG.TRANSLATION_PROGRESS,
+          langName: `⚠️ 잔액 기준 ${affordable}개 언어만 번역합니다. 제외: ${dropped.join(', ')} — 충전 후 다시 시작하면 이어서 번역됩니다.`,
+          current: 0, total: targetLangs.length,
+        });
+      }
+    }
 
     if (cachedLangs.length > 0) {
       broadcast({
