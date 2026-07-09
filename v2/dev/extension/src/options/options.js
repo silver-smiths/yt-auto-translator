@@ -193,6 +193,11 @@ let noticePage = 1;
 let noticeTotalPages = 1;
 let readIds = new Set();
 
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, ch =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
 async function initNotices() {
   const { readNoticeIds = [] } = await chrome.storage.local.get('readNoticeIds');
   readIds = new Set(readNoticeIds);
@@ -225,7 +230,7 @@ async function loadNoticeList(page = 1) {
         const isRead = readIds.has(String(n.id));
         const date = n.created_at.slice(0, 10);
         return `<li class="notice-item ${isRead ? 'read' : 'unread'}" data-id="${n.id}">
-          <span class="notice-item-title">${n.title}</span>
+          <span class="notice-item-title">${escapeHtml(n.title)}</span>
           <span class="notice-item-date">${date}</span>
         </li>`;
       }).join('');

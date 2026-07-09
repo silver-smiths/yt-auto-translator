@@ -63,6 +63,10 @@ function friendlyError(err) {
       msg.includes('auth token') || msg.includes('identity')) {
     return 'Google 계정 연동에 문제가 발생했습니다. 페이지를 새로고침 후 다시 시도해 주세요.';
   }
+  if (msg.includes('credits_fetch_failed') || msg.includes('create_job_failed') ||
+      msg.includes('update_job_failed') || msg.includes('checkout_failed')) {
+    return '번역 서버 연결에 실패했습니다. 페이지를 새로고침 후 다시 시도해 주세요.';
+  }
   if (msg.includes('401') || msg.includes('api_key_invalid') ||
       msg.includes('api key not valid') || msg.includes('invalid api key')) {
     return 'Gemini API 키가 올바르지 않습니다. ⚙️ 설정 페이지에서 API 키를 다시 확인해 주세요.';
@@ -241,7 +245,7 @@ async function translateAndUploadMetadataCredits(videoId, snippet, targetLangs, 
 
   const { job_id: metaJobId } = await createTranslationJob({
     video_id:     videoId,
-    job_type:     'metadata',
+    job_type:     'title_desc', // 스키마 check 제약: ('subtitles','title_desc','all')
     source_lang:  sourceLangName,
     target_langs: targetLangs,
     model:        'gemini-2.5-flash',
@@ -249,6 +253,7 @@ async function translateAndUploadMetadataCredits(videoId, snippet, targetLangs, 
 
   const langBatches  = chunkArray(targetLangs, MAX_LANGS_PER_CALL);
   const localizations = {};
+  let metaFailCount = 0;
 
   for (const langBatch of langBatches) {
     try {
@@ -263,12 +268,22 @@ async function translateAndUploadMetadataCredits(videoId, snippet, targetLangs, 
       for (const code of langBatch) {
         const lang = TARGET_LANGUAGES.find(l => l.code === code);
         if (!lang) continue;
-        localizations[lang.ytCode] = {};
+        // 번역이 누락된 필드는 업로드에서 제외 (빈 값으로 기존 localization 덮어쓰기 방지)
+        const translated = result.translations[code] || [];
+        const entry = {};
         let idx = 0;
-        if (settings.translateTitle)       localizations[lang.ytCode].title       = result.translations[code]?.[idx++] || snippet.title;
-        if (settings.translateDescription) localizations[lang.ytCode].description = result.translations[code]?.[idx]  || '';
+        if (settings.translateTitle) {
+          const t = translated[idx++];
+          if (t) entry.title = t;
+        }
+        if (settings.translateDescription) {
+          const d = translated[idx];
+          if (d) entry.description = d;
+        }
+        if (Object.keys(entry).length) localizations[lang.ytCode] = entry;
       }
     } catch (err) {
+      metaFailCount++;
       log(`메타데이터 번역 실패 (${langBatch.join(',')}): ${err.message}`, LOG_LEVEL.WARN);
     }
   }
@@ -278,6 +293,9 @@ async function translateAndUploadMetadataCredits(videoId, snippet, targetLangs, 
   if (Object.keys(localizations).length) {
     await updateVideoLocalizations(videoId, localizations);
     broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: '제목/설명 등록 완료 ✓', current: 1, total: 1 });
+  } else if (metaFailCount > 0) {
+    // 전 배치 실패 — 침묵하지 않고 사용자에게 안내
+    broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: '⚠️ 제목/설명 번역에 실패했습니다. 자막 결과에는 영향이 없습니다.', current: 1, total: 1 });
   }
 }
 
@@ -314,7 +332,15 @@ async function runTranslationApiKey(tabId, settings) {
       current: 0, total: state.progress.total,
     });
 
-    const { targetLangs, alreadyTranslated } = filterTargetLangs(settings, trackInfo, existingCaptions);
+    let { targetLangs, alreadyTranslated } = filterTargetLangs(settings, trackInfo, existingCaptions);
+    if (settings.translateSubtitles === false) {
+      const srcNorm = normalizeLangCode(trackInfo.language);
+      targetLangs = (settings.targetLangs || []).filter(code => {
+        const lang = TARGET_LANGUAGES.find(l => l.code === code);
+        return lang && normalizeLangCode(code) !== srcNorm && normalizeLangCode(lang.ytCode) !== srcNorm;
+      });
+      alreadyTranslated = [];
+    }
 
     if (alreadyTranslated.length > 0) {
       broadcast({
@@ -333,7 +359,9 @@ async function runTranslationApiKey(tabId, settings) {
 
     const chunks = chunkArray(targetLangs, 3);
     let globalChunksDone = 0;
-    const totalAllChunks = targetLangs.length * Math.ceil(sourceSubtitles.length / CHUNK_SIZE);
+    const totalAllChunks = settings.translateSubtitles !== false
+      ? targetLangs.length * Math.ceil(sourceSubtitles.length / CHUNK_SIZE)
+      : 0;
 
     for (const chunk of chunks) {
       if (state.shouldStop) break;
@@ -352,25 +380,26 @@ async function runTranslationApiKey(tabId, settings) {
           });
 
           try {
-            const translated = await translateSubtitles({
-              apiKey: settings.geminiApiKey || '',
-              model: settings.selectedModel,
-              sourceLang: sourceLangName,
-              targetLang: lang.name,
-              subtitles: sourceSubtitles,
-              onChunkProgress: () => {
-                globalChunksDone++;
-                broadcast({
-                  type: MSG.TRANSLATION_PROGRESS,
-                  lang: langCode,
-                  langName: `[${lang.name}] 번역 중...`,
-                  current: globalChunksDone, total: totalAllChunks,
-                  isChunkUpdate: true,
-                });
-              },
-            });
-
-            await uploadCaption(videoId, lang.ytCode, subtitlesToSRT(translated), existingCaptions);
+            if (settings.translateSubtitles !== false) {
+              const translated = await translateSubtitles({
+                apiKey: settings.geminiApiKey || '',
+                model: settings.selectedModel,
+                sourceLang: sourceLangName,
+                targetLang: lang.name,
+                subtitles: sourceSubtitles,
+                onChunkProgress: () => {
+                  globalChunksDone++;
+                  broadcast({
+                    type: MSG.TRANSLATION_PROGRESS,
+                    lang: langCode,
+                    langName: `[${lang.name}] 번역 중...`,
+                    current: globalChunksDone, total: totalAllChunks,
+                    isChunkUpdate: true,
+                  });
+                },
+              });
+              await uploadCaption(videoId, lang.ytCode, subtitlesToSRT(translated), existingCaptions);
+            }
 
             // 제목/설명 번역 (API 키 모드 — 언어별 순차 처리)
             if (settings.translateTitle || settings.translateDescription) {
@@ -383,8 +412,12 @@ async function runTranslationApiKey(tabId, settings) {
                   title:          settings.translateTitle       ? videoSnippet?.title                        : null,
                   description:    settings.translateDescription ? videoSnippet?.description?.slice(0, 3000)  : null,
                 });
-                if (Object.keys(metaResult).length) {
-                  await updateVideoLocalizations(videoId, { [lang.ytCode]: metaResult });
+                // 빈 값 필드는 제외 (기존 localization 덮어쓰기 방지)
+                const entry = {};
+                if (metaResult.title)       entry.title       = metaResult.title;
+                if (metaResult.description) entry.description = metaResult.description;
+                if (Object.keys(entry).length) {
+                  await updateVideoLocalizations(videoId, { [lang.ytCode]: entry });
                 }
               } catch (metaErr) {
                 log(`[${lang.name}] 제목/설명 번역 실패: ${metaErr.message}`, LOG_LEVEL.WARN);
@@ -459,6 +492,10 @@ async function runTranslationCredits(tabId, settings) {
 
     // 3. 대상 언어 필터링
     let { targetLangs, alreadyTranslated } = filterTargetLangs(settings, trackInfo, existingCaptions);
+    if (settings.translateSubtitles === false) {
+      targetLangs = [];
+      alreadyTranslated = [];
+    }
 
     if (alreadyTranslated.length > 0) {
       broadcast({
@@ -468,7 +505,7 @@ async function runTranslationCredits(tabId, settings) {
       });
     }
 
-    if (targetLangs.length === 0) {
+    if (targetLangs.length === 0 && !(settings.translateTitle || settings.translateDescription)) {
       const savedTabId = state.tabId;
       resetState();
       broadcast({ type: MSG.TRANSLATION_COMPLETE, successCount: 0, failCount: 0, errors: [], allSkipped: true }, savedTabId);
@@ -477,7 +514,8 @@ async function runTranslationCredits(tabId, settings) {
 
     // 3-1. 이전 업로드 실패 번역 캐시 확인 → 해당 언어는 번역 생략하고 바로 업로드
     const cached = await getSavedTranslations(videoId);
-    const cachedLangs   = cached ? targetLangs.filter(c => cached.langResults?.[c]) : [];
+    // 원본 자막 개수와 일치하는 캐시만 복원 (자막 수정 후 재시도 시 인덱스 엇갈림 방지)
+    const cachedLangs   = cached ? targetLangs.filter(c => cached.langResults?.[c]?.length === sourceSubtitles.length) : [];
     const remainingLangs = targetLangs.filter(c => !cachedLangs.includes(c));
 
     if (cachedLangs.length > 0) {
@@ -604,7 +642,7 @@ async function runTranslationCredits(tabId, settings) {
 
       // 번역 단계 실패 언어는 건너뜀 (캐시 복원 언어는 failedLangs에 없음)
       if (failedLangs.has(code)) {
-        errors.push({ lang: code, error: '번역 실패' });
+        errors.push({ lang: lang.name, message: '번역 실패' });
         continue;
       }
 
@@ -633,6 +671,16 @@ async function runTranslationCredits(tabId, settings) {
         const detail = getUploadErrorMessage(err, lang.name);
         errors.push({ lang: lang.name, message: detail });
         broadcast({ type: MSG.TRANSLATION_ERROR, error: detail, lang: code });
+      }
+    }
+
+    // 중지로 업로드를 시도하지 못한 언어도 캐시 저장 대상에 포함 (번역 결과 유실 방지 — 과금은 이미 발생)
+    if (state.shouldStop) {
+      for (const code of allUploadLangs) {
+        if (!uploadSucceeded.includes(code) && !uploadFailed.includes(code) &&
+            !failedLangs.has(code) && allLangResults[code]?.length) {
+          uploadFailed.push(code);
+        }
       }
     }
 

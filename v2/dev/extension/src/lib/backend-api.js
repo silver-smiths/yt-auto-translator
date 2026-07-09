@@ -9,23 +9,36 @@ function getToken() {
   });
 }
 
-async function authHeaders() {
-  const token = await getToken();
-  return { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
+function removeCachedToken(token) {
+  return new Promise(resolve => chrome.identity.removeCachedAuthToken({ token }, resolve));
+}
+
+// 401 발생 시 만료 토큰 제거 후 1회 재시도
+async function authFetch(url, options = {}) {
+  let token = await getToken();
+  const doFetch = (t) => fetch(url, {
+    ...options,
+    headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json', ...options.headers },
+  });
+
+  let res = await doFetch(token);
+  if (res.status === 401) {
+    await removeCachedToken(token);
+    token = await getToken();
+    res = await doFetch(token);
+  }
+  return res;
 }
 
 export async function fetchCredits() {
-  const headers = await authHeaders();
-  const res = await fetch(`${API_BASE}/credits`, { headers });
+  const res = await authFetch(`${API_BASE}/credits`);
   if (!res.ok) throw new Error(`CREDITS_FETCH_FAILED_${res.status}`);
   return res.json(); // { balance, tier, multiplier }
 }
 
 export async function createTranslationJob(params) {
-  const headers = await authHeaders();
-  const res = await fetch(`${API_BASE}/translate/job`, {
+  const res = await authFetch(`${API_BASE}/translate/job`, {
     method:  'POST',
-    headers,
     body: JSON.stringify(params),
   });
   if (!res.ok) throw new Error(`CREATE_JOB_FAILED_${res.status}`);
@@ -33,10 +46,8 @@ export async function createTranslationJob(params) {
 }
 
 export async function translateChunk(params) {
-  const headers = await authHeaders();
-  const res = await fetch(`${API_BASE}/translate/chunk`, {
+  const res = await authFetch(`${API_BASE}/translate/chunk`, {
     method:  'POST',
-    headers,
     body: JSON.stringify(params),
   });
   if (res.status === 402) throw new Error('INSUFFICIENT_CREDITS');
@@ -47,10 +58,8 @@ export async function translateChunk(params) {
 }
 
 export async function createCheckout(amount, currency) {
-  const headers = await authHeaders();
-  const res = await fetch(`${API_BASE}/credits/checkout`, {
+  const res = await authFetch(`${API_BASE}/credits/checkout`, {
     method: 'POST',
-    headers,
     body: JSON.stringify({ amount, currency }),
   });
   if (!res.ok) throw new Error(`CHECKOUT_FAILED_${res.status}`);
@@ -58,10 +67,8 @@ export async function createCheckout(amount, currency) {
 }
 
 export async function updateTranslationJob(jobId, params) {
-  const headers = await authHeaders();
-  const res = await fetch(`${API_BASE}/translate/job/${jobId}`, {
+  const res = await authFetch(`${API_BASE}/translate/job/${jobId}`, {
     method:  'PATCH',
-    headers,
     body: JSON.stringify(params),
   });
   if (!res.ok) throw new Error(`UPDATE_JOB_FAILED_${res.status}`);

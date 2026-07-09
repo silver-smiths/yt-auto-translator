@@ -55,6 +55,17 @@ const CSS = `
 }
 .s-close:hover { color: rgba(255,255,255,0.7); }
 
+/* ── 공지 배너 ── */
+.s-quota-banner {
+  display: flex; align-items: flex-start; gap: 6px;
+  padding: 8px 14px; flex-shrink: 0;
+  background: rgba(255,193,7,0.08);
+  border-bottom: 1px solid rgba(255,193,7,0.2);
+  font-size: 11px; line-height: 1.5;
+  color: rgba(255,255,255,0.75);
+}
+.s-quota-banner .banner-icon { flex-shrink: 0; }
+
 /* ── 모드 스트립 ── */
 .s-mode-strip {
   display: flex; align-items: center; justify-content: space-between;
@@ -349,6 +360,11 @@ function buildSidebarHTML() {
         <span class="s-title">YouTube 번역 AI</span>
       </div>
       <button class="s-close" id="btn-close">&times;</button>
+    </div>
+
+    <div class="s-quota-banner" id="quota-banner">
+      <span class="banner-icon">⏳</span>
+      <span>YouTube 측의 API 일일 한도 상향 승인을 기다리고 있습니다. 한도 초과 시 번역 결과는 저장되며, 다음 날 다시 시작하면 추가 비용 없이 자동 등록됩니다.</span>
     </div>
 
     <div class="s-mode-strip" id="mode-strip">
@@ -774,15 +790,20 @@ function addUpsellLog(timeSavedMs) {
 }
 
 // ── SW 메시지 수신 ────────────────────────────────────────────────────────────
+let currentMsgHandler = null;   // 재마운트 시 리스너 중복 등록 방지
+let lastProgressLog   = '';     // 동일 진행 메시지 중복 로그 방지
+
 function setupMessageListener() {
-  chrome.runtime.onMessage.addListener((msg) => {
+  if (currentMsgHandler) chrome.runtime.onMessage.removeListener(currentMsgHandler);
+
+  currentMsgHandler = (msg) => {
     if (!msg?.type) return;
 
     switch (msg.type) {
       case MSG.TRANSLATION_PROGRESS: {
         if (!isRunning) setRunning(true, msg.targetLangs || []);
-        if (msg.langDone) {
-          langChipState[msg.langDone] = 'done';
+        if (msg.langDone && msg.lang) {
+          langChipState[msg.lang] = 'done';
           renderChips();
         } else if (msg.lang && langChipState[msg.lang] !== 'done') {
           langChipState[msg.lang] = 'active';
@@ -793,7 +814,15 @@ function setupMessageListener() {
         } else if (msg.current != null && msg.total > 0) {
           updateProgress((msg.current / msg.total) * 100, msg.current, msg.total);
         }
-        if (msg.message) addLog('info', 'INFO', msg.message);
+        if (msg.langName) {
+          const label = shadow.getElementById('progress-label');
+          if (label) label.textContent = msg.langName;
+          // 청크 단위 갱신·주기적 하트비트는 로그 제외 (스팸 방지)
+          if (!msg.isChunkUpdate && !msg.langName.includes('경과') && msg.langName !== lastProgressLog) {
+            addLog('info', 'INFO', msg.langName);
+            lastProgressLog = msg.langName;
+          }
+        }
         break;
       }
 
@@ -802,13 +831,15 @@ function setupMessageListener() {
         Object.keys(langChipState).forEach(code => { langChipState[code] = 'done'; });
         renderChips();
         setRunning(false);
-        const { successCount = 0, failCount = 0, timeSavedMs } = msg;
-        addLog('success', 'SUCCESS',
-          `✅ 번역 완료! ${successCount}개 언어 업로드 성공${failCount > 0 ? ` (${failCount}개 실패)` : ''}`,
-          null, true  // persist
-        );
-        if (settings.translationMode === TRANSLATION_MODES.API_KEY && timeSavedMs > 0) {
-          addUpsellLog(timeSavedMs);
+        const successCount = msg.successCount ?? 0;
+        const failCount    = msg.errors?.length ?? 0;
+        if (msg.allSkipped) {
+          addLog('success', 'SUCCESS', '💡 선택한 언어가 모두 이미 번역되어 있어 건너뛰었습니다.', null, true);
+        } else {
+          addLog('success', 'SUCCESS',
+            `✅ 번역 완료! ${successCount}개 언어 업로드 성공${failCount > 0 ? ` (${failCount}개 실패)` : ''}`,
+            null, true  // persist
+          );
         }
         if (settings.translationMode === TRANSLATION_MODES.CREDITS) {
           loadCreditBalance();
@@ -818,12 +849,14 @@ function setupMessageListener() {
 
       case MSG.TRANSLATION_ERROR: {
         setRunning(false);
-        addLog('error', 'ERROR', `❌ ${msg.message || '번역 중 오류가 발생했습니다.'}`, null, true);
-        if (msg.message?.includes('크레딧')) {
+        const errText = msg.error || msg.message || '번역 중 오류가 발생했습니다.';
+        addLog('error', 'ERROR', `❌ ${errText}`, null, true);
+        if (errText.includes('크레딧')) {
           updateModeStrip();
         }
         break;
       }
     }
-  });
+  };
+  chrome.runtime.onMessage.addListener(currentMsgHandler);
 }

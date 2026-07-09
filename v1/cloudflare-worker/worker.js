@@ -55,13 +55,18 @@ export default {
 // 메시지 포맷
 // =============================================
 
+// Telegram legacy Markdown 특수문자 이스케이프 — 에러 메시지에 _ * [ ` 포함 시 400 방지
+function escapeMd(s) {
+  return String(s ?? '').replace(/([_*`\[])/g, '\\$1');
+}
+
 function formatMessage(body) {
   const { type, videoId, errors = [], total = 0, success = 0, message, stack, action, currentLang, timestamp } = body;
   const time = timestamp ? new Date(timestamp).toLocaleString('ko-KR') : new Date().toLocaleString('ko-KR');
 
   // 번역 에러 (언어별 실패)
   if (type === 'translation_error' && errors.length > 0) {
-    const failList = errors.map(e => `  • ${e.lang}: ${e.message}`).join('\n');
+    const failList = errors.map(e => `  • ${escapeMd(e.lang)}: ${escapeMd(e.message)}`).join('\n');
     return [
       `🚨 *[YT 자동번역] 번역 오류 발생*`,
       ``,
@@ -80,10 +85,10 @@ function formatMessage(body) {
     `🔴 *[YT 자동번역] 오류 발생*`,
     ``,
     `📌 액션: \`${action || '알 수 없음'}\``,
-    currentLang ? `🌐 언어: ${currentLang}` : '',
+    currentLang ? `🌐 언어: ${escapeMd(currentLang)}` : '',
     ``,
-    `💬 메시지: ${message || '알 수 없는 오류'}`,
-    stack ? `\`\`\`\n${stack.slice(0, 300)}\n\`\`\`` : '',
+    `💬 메시지: ${escapeMd(message || '알 수 없는 오류')}`,
+    stack ? `\`\`\`\n${stack.slice(0, 300).replace(/`/g, "'")}\n\`\`\`` : '',
     ``,
     `🕐 ${time}`
   ].filter(Boolean).join('\n');
