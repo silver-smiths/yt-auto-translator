@@ -1,6 +1,5 @@
-import { MSG, TARGET_LANGUAGES, TRANSLATION_MODES, getChunkSize } from '../lib/constants.js';
+import { MSG, TARGET_LANGUAGES, getChunkSize } from '../lib/constants.js';
 import { loadSettings } from '../lib/storage.js';
-import { translateSubtitles, configureRateLimit, CHUNK_SIZE } from '../lib/llm-api.js';
 import { reportError, reportTranslationResult, installGlobalErrorHandler, log, LOG_LEVEL, initSentry } from '../lib/logger.js';
 import {
   authorizeYouTube,
@@ -202,37 +201,6 @@ function filterTargetLangs(settings, trackInfo, existingCaptions) {
   return { targetLangs, alreadyTranslated };
 }
 
-// ── 제목/설명 번역 — API 키 모드 (직접 Gemini 호출) ──────────────────────────
-
-async function translateMetadataApiKey({ apiKey, model, sourceLang, targetLangName, title, description }) {
-  const schema = { type: 'object', properties: {}, required: [] };
-  const promptParts = [`Translate from ${sourceLang} to ${targetLangName}:`];
-  if (title)       { promptParts.push(`Title: ${title}`);              schema.properties.title       = { type: 'string' }; schema.required.push('title');       }
-  if (description) { promptParts.push(`Description:\n${description}`); schema.properties.description = { type: 'string' }; schema.required.push('description'); }
-  promptParts.push('\nReturn ONLY the JSON object, no explanation.');
-
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: promptParts.join('\n') }] }],
-        generationConfig: { temperature: 0.2, responseMimeType: 'application/json', responseSchema: schema },
-      }),
-    }
-  );
-
-  if (!res.ok) {
-    const errBody = await res.json().catch(() => ({}));
-    throw new Error(`Gemini API 오류 (${res.status}): ${errBody?.error?.message || '알 수 없는 오류'}`);
-  }
-
-  const data = await res.json();
-  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
-  return JSON.parse(text || '{}');
-}
-
 // ── 제목/설명 번역 — 크레딧 모드 ──────────────────────────────────────────────
 
 async function translateAndUploadMetadataCredits(videoId, snippet, targetLangs, sourceLangName, settings) {
@@ -296,169 +264,6 @@ async function translateAndUploadMetadataCredits(videoId, snippet, targetLangs, 
   } else if (metaFailCount > 0) {
     // 전 배치 실패 — 침묵하지 않고 사용자에게 안내
     broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: '⚠️ 제목/설명 번역에 실패했습니다. 자막 결과에는 영향이 없습니다.', current: 1, total: 1 });
-  }
-}
-
-// ── API 키 경로 (v1 로직 그대로) ───────────────────────────────────────────────
-
-async function runTranslationApiKey(tabId, settings) {
-  if (settings.selectedModel === 'gemini-2.0-flash-exp') {
-    settings.selectedModel = 'gemini-2.0-flash';
-  }
-
-  state = {
-    isRunning: true, shouldStop: false, currentLang: null,
-    tabId, targetLangs: settings.targetLangs,
-    progress: { current: 0, total: settings.targetLangs.length },
-  };
-
-  const rateKey = settings.geminiTier === 'paid'
-    ? `paid_${settings.paidSpeed || 'normal'}` : 'free';
-  configureRateLimit(rateKey);
-
-  if (settings.sentryDsn) await initSentry(settings.sentryDsn);
-
-  const errors = [];
-
-  try {
-    const { videoId, videoSnippet, subtitles: sourceSubtitles, trackInfo, existingCaptions } =
-      await prepareSubtitles(tabId, settings);
-
-    const sourceLangName = getLangName(trackInfo.language);
-    const trackKindLabel = trackInfo.isASR ? '(자동생성)' : '(수동업로드)';
-    broadcast({
-      type: MSG.TRANSLATION_PROGRESS,
-      langName: `원본 감지: ${sourceLangName} ${trackKindLabel}`,
-      current: 0, total: state.progress.total,
-    });
-
-    let { targetLangs, alreadyTranslated } = filterTargetLangs(settings, trackInfo, existingCaptions);
-    if (settings.translateSubtitles === false) {
-      const srcNorm = normalizeLangCode(trackInfo.language);
-      targetLangs = (settings.targetLangs || []).filter(code => {
-        const lang = TARGET_LANGUAGES.find(l => l.code === code);
-        return lang && normalizeLangCode(code) !== srcNorm && normalizeLangCode(lang.ytCode) !== srcNorm;
-      });
-      alreadyTranslated = [];
-    }
-
-    if (alreadyTranslated.length > 0) {
-      broadcast({
-        type: MSG.TRANSLATION_PROGRESS,
-        langName: `💡 이미 ${alreadyTranslated.join(', ')} 언어로 번역된 자막이 있어 건너뜁니다.`,
-        current: 0, total: targetLangs.length,
-      });
-    }
-
-    if (targetLangs.length === 0) {
-      const savedTabId = state.tabId;
-      resetState();
-      broadcast({ type: MSG.TRANSLATION_COMPLETE, successCount: 0, failCount: 0, errors: [], allSkipped: true }, savedTabId);
-      return;
-    }
-
-    const chunks = chunkArray(targetLangs, 3);
-    let globalChunksDone = 0;
-    const totalAllChunks = settings.translateSubtitles !== false
-      ? targetLangs.length * Math.ceil(sourceSubtitles.length / CHUNK_SIZE)
-      : 0;
-
-    for (const chunk of chunks) {
-      if (state.shouldStop) break;
-
-      await Promise.allSettled(
-        chunk.map(async (langCode) => {
-          const lang = TARGET_LANGUAGES.find(l => l.code === langCode);
-          if (!lang) return;
-
-          state.currentLang = langCode;
-          broadcast({
-            type: MSG.TRANSLATION_PROGRESS,
-            lang: langCode,
-            langName: `[${lang.name}] 번역 중...`,
-            current: globalChunksDone, total: totalAllChunks,
-          });
-
-          try {
-            if (settings.translateSubtitles !== false) {
-              const translated = await translateSubtitles({
-                apiKey: settings.geminiApiKey || '',
-                model: settings.selectedModel,
-                sourceLang: sourceLangName,
-                targetLang: lang.name,
-                subtitles: sourceSubtitles,
-                onChunkProgress: () => {
-                  globalChunksDone++;
-                  broadcast({
-                    type: MSG.TRANSLATION_PROGRESS,
-                    lang: langCode,
-                    langName: `[${lang.name}] 번역 중...`,
-                    current: globalChunksDone, total: totalAllChunks,
-                    isChunkUpdate: true,
-                  });
-                },
-              });
-              await uploadCaption(videoId, lang.ytCode, subtitlesToSRT(translated), existingCaptions);
-            }
-
-            // 제목/설명 번역 (API 키 모드 — 언어별 순차 처리)
-            if (settings.translateTitle || settings.translateDescription) {
-              try {
-                const metaResult = await translateMetadataApiKey({
-                  apiKey:         settings.geminiApiKey || '',
-                  model:          settings.selectedModel,
-                  sourceLang:     sourceLangName,
-                  targetLangName: lang.name,
-                  title:          settings.translateTitle       ? videoSnippet?.title                        : null,
-                  description:    settings.translateDescription ? videoSnippet?.description?.slice(0, 3000)  : null,
-                });
-                // 빈 값 필드는 제외 (기존 localization 덮어쓰기 방지)
-                const entry = {};
-                if (metaResult.title)       entry.title       = metaResult.title;
-                if (metaResult.description) entry.description = metaResult.description;
-                if (Object.keys(entry).length) {
-                  await updateVideoLocalizations(videoId, { [lang.ytCode]: entry });
-                }
-              } catch (metaErr) {
-                log(`[${lang.name}] 제목/설명 번역 실패: ${metaErr.message}`, LOG_LEVEL.WARN);
-              }
-            }
-
-            broadcast({
-              type: MSG.TRANSLATION_PROGRESS,
-              lang: langCode, langName: `[${lang.name}] 완료 ✓`,
-              current: globalChunksDone, total: totalAllChunks,
-              langDone: true,
-            });
-
-          } catch (err) {
-            errors.push({ lang: lang.name, message: err.message });
-            await reportError(err, { action: 'translate_upload', currentLang: lang.name });
-            broadcast({ type: MSG.TRANSLATION_ERROR, error: `${lang.name}: ${friendlyError(err)}`, lang: langCode });
-          }
-        })
-      );
-
-      if (!state.shouldStop && settings.delayMin > 0) {
-        await new Promise(r => setTimeout(r, settings.delayMin));
-      }
-    }
-
-    const successCount = targetLangs.length - errors.length;
-    const savedTabId = state.tabId;
-    resetState();
-    broadcast({ type: MSG.TRANSLATION_COMPLETE, successCount: successCount, errors }, savedTabId);
-
-    await reportTranslationResult({ videoId, errors, total: targetLangs.length, success: successCount });
-
-  } catch (err) {
-    log(err.message, LOG_LEVEL.ERROR, { action: 'runTranslationApiKey' });
-    const savedTabId = state.tabId;
-    resetState();
-    await reportError(err, { action: 'runTranslationApiKey', tabId: savedTabId });
-    broadcast({ type: MSG.TRANSLATION_ERROR, error: friendlyError(err) }, savedTabId);
-  } finally {
-    if (state.isRunning) resetState();
   }
 }
 
@@ -781,11 +586,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     }
 
     const { settings } = message;
-    if (settings.translationMode === TRANSLATION_MODES.CREDITS) {
-      runTranslationCredits(tabId, settings);
-    } else {
-      runTranslationApiKey(tabId, settings);
-    }
+    runTranslationCredits(tabId, settings);
     sendResponse({ ok: true });
     return;
   }

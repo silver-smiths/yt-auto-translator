@@ -1,6 +1,5 @@
 import {
   TARGET_LANGUAGES,
-  GEMINI_CONFIG,
   TRANSLATION_MODES,
   API_BASE,
   PAYMENT_URL,
@@ -11,38 +10,24 @@ import { loadSettings, saveSettings } from '../lib/storage.js';
 const welcomeCard      = document.getElementById('welcomeCard');
 const welcomeStep1     = document.getElementById('welcomeStep1');
 const welcomeStep2     = document.getElementById('welcomeStep2');
-const welcomeStep3     = document.getElementById('welcomeStep3');
-const modeApiKey       = document.getElementById('modeApiKey');
-const modeCredits      = document.getElementById('modeCredits');
-const apiKeyPanel      = document.getElementById('apiKeyPanel');
-const creditPanel      = document.getElementById('creditPanel');
-const apiKeyInput      = document.getElementById('apiKey');
-const btnToggleKey     = document.getElementById('btnToggleKey');
 const creditBalance    = document.getElementById('creditBalance');
 const btnTopup         = document.getElementById('btnTopup');
-const modelSelectWrap  = document.getElementById('modelSelectWrap');
-const modelSelect      = document.getElementById('modelSelect');
-const modelFixed       = document.getElementById('modelFixed');
 const sourceLang       = document.getElementById('sourceLang');
 const langGrid         = document.getElementById('langGrid');
-const langNotice       = document.getElementById('langNotice');
 const btnSelectAll     = document.getElementById('btnSelectAll');
 const btnDeselectAll   = document.getElementById('btnDeselectAll');
-const speedSection          = document.getElementById('speedSection');
 const translateSubtitlesCb  = document.getElementById('translateSubtitles');
 const translateTitleCb      = document.getElementById('translateTitle');
 const translateDescCb       = document.getElementById('translateDescription');
 const btnSave               = document.getElementById('btnSave');
 const saveStatus            = document.getElementById('saveStatus');
 
-let currentMode = TRANSLATION_MODES.API_KEY;
 let selectedLangs = new Set();
 
 // ── 웰컴 카드 ─────────────────────────────────────────────────────────────────
 function showWelcomeStep(step) {
   welcomeStep1.style.display = step === 1 ? '' : 'none';
   welcomeStep2.style.display = step === 2 ? '' : 'none';
-  welcomeStep3.style.display = step === 3 ? '' : 'none';
 }
 
 document.getElementById('btnDismissWelcome').addEventListener('click', async () => {
@@ -52,81 +37,15 @@ document.getElementById('btnDismissWelcome').addEventListener('click', async () 
 });
 
 document.getElementById('welcomeCtaCredits').addEventListener('click', () => {
-  modeCredits.checked = true;
-  applyMode(TRANSLATION_MODES.CREDITS);
   showWelcomeStep(2);
-});
-
-document.getElementById('welcomeLinkApiKey').addEventListener('click', () => {
-  modeApiKey.checked = true;
-  applyMode(TRANSLATION_MODES.API_KEY);
-  showWelcomeStep(3);
 });
 
 document.getElementById('welcomeCtaTopup').addEventListener('click', () => {
   chrome.tabs.create({ url: PAYMENT_URL });
 });
 
-document.getElementById('welcomeCtaApiKey').addEventListener('click', () => {
-  apiKeyInput.focus();
-});
-
 document.getElementById('welcomeBack2').addEventListener('click', () => {
-  modeApiKey.checked = true;
-  applyMode(TRANSLATION_MODES.API_KEY);
   showWelcomeStep(1);
-});
-
-document.getElementById('welcomeBack3').addEventListener('click', () => {
-  modeCredits.checked = true;
-  applyMode(TRANSLATION_MODES.CREDITS);
-  showWelcomeStep(1);
-});
-
-// ── 모드 전환 ─────────────────────────────────────────────────────────────────
-function applyMode(mode) {
-  currentMode = mode;
-  const isCredits = mode === TRANSLATION_MODES.CREDITS;
-
-  apiKeyPanel.className = 'mode-panel ' + (isCredits ? 'hidden' : 'visible');
-  creditPanel.className = 'mode-panel ' + (isCredits ? 'visible' : 'hidden');
-
-  modelSelectWrap.style.display = isCredits ? 'none'  : 'block';
-  modelFixed.style.display      = isCredits ? 'block' : 'none';
-
-  if (isCredits) {
-    speedSection.style.display = 'none';
-
-    langNotice.className = 'notice notice-success';
-    langNotice.innerHTML = '✅ 최대 <strong>26개 언어</strong>를 동시에 번역합니다.';
-    btnSelectAll.disabled = false;
-
-    fetchCreditBalance();
-    checkAdminStatus();
-  } else {
-    speedSection.style.display = '';
-
-    langNotice.className = 'notice notice-warn';
-    langNotice.innerHTML = '⚠️ 내 API 키 모드에서는 한 번에 <strong>1개 언어</strong>만 번역할 수 있습니다.';
-    btnSelectAll.disabled = true;
-
-    // 여러 개 선택 → 첫 번째 1개만 유지
-    if (selectedLangs.size > 1) {
-      const first = Array.from(selectedLangs)[0];
-      selectedLangs.clear();
-      selectedLangs.add(first);
-    }
-  }
-
-  buildLangGrid();
-}
-
-modeApiKey.addEventListener('change', () => applyMode(TRANSLATION_MODES.API_KEY));
-modeCredits.addEventListener('change', () => applyMode(TRANSLATION_MODES.CREDITS));
-
-// ── API 키 토글 ───────────────────────────────────────────────────────────────
-btnToggleKey.addEventListener('click', () => {
-  apiKeyInput.type = apiKeyInput.type === 'password' ? 'text' : 'password';
 });
 
 // ── 크레딧 잔액 조회 ──────────────────────────────────────────────────────────
@@ -287,22 +206,6 @@ noticeModal.addEventListener('click', e => { if (e.target === noticeModal) notic
 
 initNotices();
 
-// ── 모델 옵션 빌드 ────────────────────────────────────────────────────────────
-function buildModelOptions(selected) {
-  modelSelect.innerHTML = '';
-  const validIds = new Set();
-  GEMINI_CONFIG.models.forEach(({ id, name }) => {
-    const opt = document.createElement('option');
-    opt.value = id;
-    opt.textContent = name;
-    modelSelect.appendChild(opt);
-    validIds.add(id);
-  });
-  modelSelect.value = (selected && validIds.has(selected))
-    ? selected
-    : GEMINI_CONFIG.defaultModel;
-}
-
 // ── 소스 언어 빌드 ────────────────────────────────────────────────────────────
 function buildSourceLang(selected) {
   sourceLang.innerHTML = '<option value="auto">자동 감지 (영상 기본 언어 자동 인식)</option>';
@@ -343,17 +246,11 @@ function buildLangGrid() {
 }
 
 function toggleLang(code) {
-  if (currentMode === TRANSLATION_MODES.API_KEY) {
-    if (selectedLangs.has(code)) return;
-    selectedLangs.clear();
-    selectedLangs.add(code);
+  if (selectedLangs.has(code)) {
+    if (selectedLangs.size === 1) return;
+    selectedLangs.delete(code);
   } else {
-    if (selectedLangs.has(code)) {
-      if (selectedLangs.size === 1) return;
-      selectedLangs.delete(code);
-    } else {
-      selectedLangs.add(code);
-    }
+    selectedLangs.add(code);
   }
   buildLangGrid();
 }
@@ -378,29 +275,19 @@ async function init() {
     welcomeCard.style.display = 'none';
   }
 
-  // 모드
-  const mode = settings.translationMode || TRANSLATION_MODES.API_KEY;
-  if (mode === TRANSLATION_MODES.CREDITS) {
-    modeCredits.checked = true;
-  } else {
-    modeApiKey.checked = true;
-  }
-
   // 언어
   selectedLangs = new Set(settings.targetLangs || []);
 
-  // 나머지 필드
-  apiKeyInput.value = settings.geminiApiKey || '';
-  buildModelOptions(settings.selectedModel);
   buildSourceLang(settings.sourceLang);
+  buildLangGrid();
 
   // 번역 대상
   translateSubtitlesCb.checked = settings.translateSubtitles !== false;
   translateTitleCb.checked     = !!settings.translateTitle;
   translateDescCb.checked      = !!settings.translateDescription;
 
-  // 모드 UI 적용 (buildLangGrid 포함)
-  applyMode(mode);
+  fetchCreditBalance();
+  checkAdminStatus();
 }
 
 // ── 저장 ──────────────────────────────────────────────────────────────────────
@@ -413,9 +300,7 @@ btnSave.addEventListener('click', async () => {
   const settings = await loadSettings();
   const updated = {
     ...settings,
-    translationMode:      currentMode,
-    geminiApiKey:         apiKeyInput.value.trim(),
-    selectedModel:        modelSelect.value,
+    translationMode:      TRANSLATION_MODES.CREDITS,
     sourceLang:           sourceLang.value,
     targetLangs:          Array.from(selectedLangs),
     translateSubtitles:   translateSubtitlesCb.checked,

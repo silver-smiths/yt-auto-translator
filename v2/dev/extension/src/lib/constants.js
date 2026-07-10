@@ -2,9 +2,8 @@
  * YTAT v2 — Constants
  */
 
-// ── 번역 모드 ────────────────────────────────────────────────────────────────
+// ── 번역 모드 (v2.0부터 크레딧 단일 모드) ───────────────────────────────────
 export const TRANSLATION_MODES = {
-  API_KEY: 'api_key',
   CREDITS: 'credits',
 };
 
@@ -38,23 +37,6 @@ export const TARGET_LANGUAGES = [
   { code: 'ko',    name: 'Korean',                    nativeName: '한국어',            ytCode: 'ko'      },
 ];
 
-// ── Gemini 설정 ───────────────────────────────────────────────────────────────
-export const GEMINI_CONFIG = {
-  baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
-  models: [
-    { id: 'gemini-2.5-flash',      name: 'Gemini 2.5 Flash (권장)' },
-    { id: 'gemini-2.5-flash-lite', name: 'Gemini 2.5 Flash-Lite (경량)' },
-    { id: 'gemini-2.5-pro',        name: 'Gemini 2.5 Pro (고품질)' },
-  ],
-  defaultModel: 'gemini-2.5-flash',
-  apiKeyUrl: 'https://aistudio.google.com/apikey',
-};
-
-// ── Rate Limit (API 키 모드 무료 티어 전용) ───────────────────────────────────
-export const RATE_CONFIGS = {
-  free: { intervalMs: 5000, rpmLabel: '~12 RPM', desc: '무료 티어 (5초 간격)' },
-};
-
 // ── 백엔드 API ────────────────────────────────────────────────────────────────
 export const API_BASE = 'https://yt-auto-translator-api.1009yjh.workers.dev';
 export const PAYMENT_URL = 'https://silver-smiths.com/project/ytat-credits.html';
@@ -69,9 +51,7 @@ export function getChunkSize(langCount) {
 
 // ── 기본 설정값 ───────────────────────────────────────────────────────────────
 export const DEFAULT_SETTINGS = {
-  translationMode:      TRANSLATION_MODES.API_KEY,
-  geminiApiKey:         '',
-  selectedModel:        'gemini-2.5-flash',
+  translationMode:      TRANSLATION_MODES.CREDITS,
   sourceLang:           'auto',
   targetLangs:          TARGET_LANGUAGES.map(l => l.code).filter(c => c !== 'ko'),
   welcomeDismissed:     false,
@@ -92,18 +72,3 @@ export const MSG = {
   OPEN_OPTIONS:         'OPEN_OPTIONS',
 };
 
-// ── 번역 프롬프트 (API 키 모드용) ─────────────────────────────────────────────
-export const TRANSLATION_PROMPT = `You are a professional subtitle translator.
-Your goal is to translate subtitles from {sourceLang} into {targetLang} accurately while maintaining the original meaning, tone, and subtitle style.
-
-CRITICAL RULES:
-1. Return ONLY the translated lines in {targetLang}.
-2. NO preamble, NO postamble, NO explanations, NO markdown code blocks.
-3. Format each line strictly as: [ID] Translated Text (e.g., [1] 안녕하세요)
-4. Keep exactly the same number of lines as input. DO NOT skip, merge, or omit any lines.
-5. DO NOT echo back the {sourceLang} text. YOU MUST translate into {targetLang}.
-6. Your response must consist ONLY of the numbered lines.
-7. Translate EVERY line independently. Even if consecutive lines appear identical or very similar in the source, you MUST output a separate translation for each — do NOT deduplicate, collapse, or skip any line.
-
-Input Subtitles ({sourceLang} -> {targetLang}):
-{subtitles}`;

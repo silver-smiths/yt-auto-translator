@@ -29,14 +29,10 @@
         </div>
         <div class="welcome-feature">
           <span class="welcome-feature-icon">⚡</span>
-          <span>최대 속도로 <strong>여러 언어 동시 번역</strong> — API 키 설정도 불필요</span>
+          <span>최대 속도로 <strong>여러 언어 동시 번역</strong> — API 키 설정 불필요</span>
         </div>
       </div>
       <button class="welcome-cta" id="welcomeCtaCredits">크레딧으로 바로 시작 →</button>
-      <div class="welcome-note">
-        이미 Gemini API 키가 있으신가요?
-        <button class="welcome-link" id="welcomeLinkApiKey">API 키로 시작하기</button>
-      </div>
     </div>
 
     <!-- 스텝 2: 크레딧 선택 후 -->
@@ -62,105 +58,19 @@
       </div>
     </div>
 
-    <!-- 스텝 3: API 키 선택 후 -->
-    <div id="welcomeStep3" style="display:none;">
-      <div class="welcome-title">API 키를 입력해 주세요 🔑</div>
-      <div class="welcome-features">
-        <div class="welcome-feature">
-          <span class="welcome-feature-icon">✅</span>
-          <span>번역 방식 선택 완료 — <strong>내 API 키 모드</strong></span>
-        </div>
-        <div class="welcome-feature">
-          <span class="welcome-feature-icon">1️⃣</span>
-          <span><a href="https://aistudio.google.com/apikey" target="_blank">Google AI Studio</a>에서 <strong>무료 API 키 발급</strong></span>
-        </div>
-        <div class="welcome-feature">
-          <span class="welcome-feature-icon">2️⃣</span>
-          <span>아래 <strong>API 키 입력란</strong>에 붙여넣고 저장</span>
-        </div>
-      </div>
-      <button class="welcome-cta" id="welcomeCtaApiKey">API 키 입력하러 가기 →</button>
-      <div class="welcome-note">
-        <button class="welcome-link" id="welcomeBack3">← 다시 선택하기</button>
-      </div>
-    </div>
   </div>
 
-  <!-- ── 번역 방식 ── -->
+  <!-- ── 크레딧 ── -->
   <section class="section">
-    <label class="label">🔧 번역 방식</label>
-    <div class="mode-options">
-      <label class="mode-option">
-        <input type="radio" name="mode" id="modeApiKey" value="api_key">
-        <div>
-          <div class="mode-option-title">내 API 키 사용</div>
-          <div class="mode-option-desc">직접 발급한 Gemini API 키로 번역합니다. 비용은 내 Google 계정에 청구됩니다.</div>
-        </div>
-      </label>
-      <label class="mode-option">
-        <input type="radio" name="mode" id="modeCredits" value="credits">
-        <div>
-          <div class="mode-option-title">크레딧 사용 <span class="badge-new">NEW</span></div>
-          <div class="mode-option-desc">API 키 없이 크레딧으로 번역합니다. 최대 속도 · 최대 26개 언어 동시 번역.</div>
-        </div>
-      </label>
-    </div>
-
-    <!-- 모드별 패널 -->
-    <div class="mode-panel-wrap">
-      <!-- API 키 패널 -->
-      <div id="apiKeyPanel" class="mode-panel visible">
-        <label class="label" style="margin-bottom:8px;">🔑 Gemini API 키</label>
-        <div class="api-key-group">
-          <input type="password" id="apiKey" class="input" placeholder="API 키를 붙여넣으세요">
-          <button class="btn-icon" id="btnToggleKey" title="표시/숨기기">👁</button>
-        </div>
-        <p class="hint">API 키는 이 기기에만 저장되며 외부 서버로 전송되지 않습니다.</p>
+    <label class="label">💳 크레딧</label>
+    <div class="credit-balance-card">
+      <div>
+        <div class="credit-balance-label">크레딧 잔액</div>
+        <div class="credit-balance-amount" id="creditBalance">로딩 중...</div>
       </div>
-
-      <!-- 크레딧 패널 -->
-      <div id="creditPanel" class="mode-panel hidden">
-        <div class="credit-balance-card">
-          <div>
-            <div class="credit-balance-label">크레딧 잔액</div>
-            <div class="credit-balance-amount" id="creditBalance">로딩 중...</div>
-          </div>
-          <button class="btn-topup" id="btnTopup">충전하기</button>
-        </div>
-        <p class="hint" style="margin-top:6px;">잔액이 소진되면 번역이 중단됩니다. 미리 충전해 두세요.</p>
-      </div>
+      <button class="btn-topup" id="btnTopup">충전하기</button>
     </div>
-  </section>
-
-  <hr>
-
-  <!-- ── AI 모델 ── -->
-  <section class="section">
-    <label class="label">AI 모델</label>
-
-    <!-- API 키 모드: 드롭다운 -->
-    <div id="modelSelectWrap">
-      <select id="modelSelect" class="select"></select>
-    </div>
-
-    <!-- 크레딧 모드: 고정 표시 -->
-    <div id="modelFixed" style="display:none;">
-      <div class="model-fixed-display">
-        <span class="model-fixed-label">YTAT에서 추천하는 모델</span>
-        <span>🔒</span>
-      </div>
-      <p class="hint">크레딧 모드에서는 최적 성능의 모델이 자동 적용됩니다.</p>
-    </div>
-  </section>
-
-  <!-- ── 번역 속도 ── -->
-  <section class="section" id="speedSection">
-    <label class="label">⚡ 번역 속도</label>
-    <div class="speed-display">
-      <span class="speed-badge" id="speedBadge">무료 티어 고정</span>
-      <span class="speed-desc" id="speedDesc">느림 · 5초 간격 (~12 RPM)</span>
-    </div>
-    <p class="hint" id="speedHint">더 빠른 번역을 원하면 크레딧 모드를 사용하세요.</p>
+    <p class="hint" style="margin-top:6px;">사용한 만큼만 차감됩니다. 최적 성능의 AI 모델이 자동 적용됩니다.</p>
   </section>
 
   <!-- ── 번역 대상 ── -->
@@ -195,13 +105,13 @@
     <div class="lang-header">
       <label class="label" style="margin-bottom:0">번역 언어</label>
       <div class="lang-controls">
-        <button class="btn-small" id="btnSelectAll" disabled>전체 선택</button>
+        <button class="btn-small" id="btnSelectAll">전체 선택</button>
         <button class="btn-small" id="btnDeselectAll">전체 해제</button>
       </div>
     </div>
 
-    <div class="notice notice-warn" id="langNotice">
-      ⚠️ 내 API 키 모드에서는 한 번에 <strong>1개 언어</strong>만 번역할 수 있습니다.
+    <div class="notice notice-success" id="langNotice">
+      ✅ 최대 <strong>26개 언어</strong>를 동시에 번역합니다.
     </div>
 
     <div class="lang-grid" id="langGrid"></div>

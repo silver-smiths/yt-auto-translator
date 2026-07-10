@@ -1,4 +1,4 @@
-import { TRANSLATION_MODES, MSG, PAYMENT_URL, API_BASE, TARGET_LANGUAGES } from '../lib/constants.js';
+import { MSG, PAYMENT_URL, API_BASE, TARGET_LANGUAGES } from '../lib/constants.js';
 import { loadSettings } from '../lib/storage.js';
 
 // ── 인라인 CSS (Shadow DOM 내부) ──────────────────────────────────────────────
@@ -303,11 +303,7 @@ export async function mount() {
 
   renderToggleTab();
   renderSidebar();
-
-  if (settings.translationMode === TRANSLATION_MODES.CREDITS) {
-    loadCreditBalance();
-  }
-
+  loadCreditBalance();
   setupMessageListener();
   loadLogHistory(); // 이전 번역 기록 복원
 }
@@ -475,22 +471,14 @@ function updateModeStrip() {
   const btnTopup = shadow.getElementById('btn-topup');
   const btnTrans = shadow.getElementById('btn-translate');
 
-  if (settings.translationMode === TRANSLATION_MODES.CREDITS) {
-    const balance = creditBalance ?? 0;
-    const isLow = balance < 0.5;
+  const balance = creditBalance ?? 0;
+  const isLow = balance < 0.5;
 
-    strip.className = `s-mode-strip credits${isLow ? ' low' : ''}`;
-    label.textContent = isLow ? '크레딧 부족' : '크레딧';
-    value.textContent = creditBalance != null ? `$${(Math.floor(balance * 100) / 100).toFixed(2)}` : '로딩 중...';
-    btnTopup.style.display = 'block';
-    btnTrans.disabled = isLow;
-  } else {
-    strip.className = 's-mode-strip apikey';
-    label.textContent = '번역 방식';
-    value.textContent = '내 API 키';
-    btnTopup.style.display = 'none';
-    btnTrans.disabled = false;
-  }
+  strip.className = `s-mode-strip credits${isLow ? ' low' : ''}`;
+  label.textContent = isLow ? '크레딧 부족' : '크레딧';
+  value.textContent = creditBalance != null ? `$${(Math.floor(balance * 100) / 100).toFixed(2)}` : '로딩 중...';
+  btnTopup.style.display = 'block';
+  btnTrans.disabled = isLow;
 }
 
 // ── 크레딧 잔액 조회 ──────────────────────────────────────────────────────────
@@ -525,23 +513,13 @@ const ONBOARD_CARDS = [
     cls: 'info',
     typeColor: '#BB86FC',
     typeLabel: '📌 공지',
-    msg: '먼저 <strong style="color:rgba(255,255,255,0.9)">⚙️ 설정</strong>에서 번역 방식을 선택하고 Gemini API 키 또는 크레딧을 준비하세요.',
-  },
-  {
-    id: 'credits',
-    cls: 'onboard-credits',
-    typeColor: '#03DAC6',
-    typeLabel: '✨ 크레딧 모드',
-    isCreditCard: true,
+    msg: '먼저 <strong style="color:rgba(255,255,255,0.9)">⚙️ 설정</strong>에서 번역 언어를 선택하고 크레딧을 충전하세요.',
   },
 ];
 
 async function renderOnboardingCards() {
   const result = await new Promise(r => chrome.storage.local.get('dismissedCards', r));
   const dismissed = new Set(result.dismissedCards || []);
-  if (settings.translationMode === TRANSLATION_MODES.CREDITS) {
-    dismissed.add('credits'); // 크레딧 모드면 크레딧 유도 카드 숨김
-  }
 
   const feed = shadow.getElementById('onboard-feed');
   for (const card of ONBOARD_CARDS) {
@@ -555,39 +533,13 @@ function buildOnboardCard(card) {
   el.className = `log-card ${card.cls}`;
   el.dataset.cardId = card.id;
 
-  if (card.isCreditCard) {
-    el.innerHTML = `
-      <div class="log-top">
-        <span class="log-type" style="color:${card.typeColor}">${card.typeLabel}</span>
-        <button class="log-dismiss">× 닫기</button>
-      </div>
-      <div class="log-msg" style="margin-bottom:6px;">API 키 없이 더 빠르고 강력하게 번역하세요.</div>
-      <div class="credit-feature-row">
-        <span class="credit-feature-icon">⚡</span>
-        <span class="credit-feature-text">무료 티어 대비 <strong>최대 10배 빠른</strong> 번역 속도</span>
-      </div>
-      <div class="credit-feature-row">
-        <span class="credit-feature-icon">🌍</span>
-        <span class="credit-feature-text"><strong>26개 언어 동시</strong> 번역</span>
-      </div>
-      <div class="credit-feature-row">
-        <span class="credit-feature-icon">🔑</span>
-        <span class="credit-feature-text">API 키 발급·관리 <strong>불필요</strong></span>
-      </div>
-      <div class="log-cta" id="cta-credits-info">크레딧 모드 알아보기 →</div>
-    `;
-    el.querySelector('#cta-credits-info').addEventListener('click', () => {
-      shadow.getElementById('credit-info-panel').style.display = 'flex';
-    });
-  } else {
-    el.innerHTML = `
-      <div class="log-top">
-        <span class="log-type" style="color:${card.typeColor}">${card.typeLabel}</span>
-        <button class="log-dismiss">× 닫기</button>
-      </div>
-      <div class="log-msg">${card.msg}</div>
-    `;
-  }
+  el.innerHTML = `
+    <div class="log-top">
+      <span class="log-type" style="color:${card.typeColor}">${card.typeLabel}</span>
+      <button class="log-dismiss">× 닫기</button>
+    </div>
+    <div class="log-msg">${card.msg}</div>
+  `;
 
   el.querySelector('.log-dismiss').addEventListener('click', () => {
     dismissCard(card.id, el);
@@ -607,11 +559,6 @@ async function dismissCard(id, el) {
 
 // ── 번역 시작 ─────────────────────────────────────────────────────────────────
 function startTranslation() {
-  if (!settings.geminiApiKey && settings.translationMode === TRANSLATION_MODES.API_KEY) {
-    addLog('error', 'ERROR', '⚠️ API 키가 설정되지 않았습니다. ⚙️ 설정에서 API 키를 입력하세요.');
-    return;
-  }
-
   chrome.runtime.sendMessage({ type: MSG.START_TRANSLATION, settings });
 }
 
@@ -763,32 +710,6 @@ function addLog(type, label, msg, labelColor, persist = false) {
   if (persist) saveLog(type, label, msg);
 }
 
-function addUpsellLog(timeSavedMs) {
-  const feed = shadow.getElementById('log-feed');
-  const card = document.createElement('div');
-  card.className = 'log-card upsell';
-
-  const saved = timeSavedMs >= 60000
-    ? `${Math.round(timeSavedMs / 60000)}분`
-    : `${Math.round(timeSavedMs / 1000)}초`;
-
-  const time = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-  card.innerHTML = `
-    <div class="log-top">
-      <span class="log-type" style="color:#03DAC6">TIP</span>
-      <span class="log-time">${time}</span>
-    </div>
-    <div class="log-msg">⚡ 크레딧 모드로 번역했다면 <strong style="color:#03DAC6">${saved}</strong>를 절감할 수 있었습니다.</div>
-    <div class="log-cta" id="cta-upsell">크레딧 모드 알아보기 →</div>
-  `;
-
-  card.querySelector('#cta-upsell').addEventListener('click', () => {
-    shadow.getElementById('credit-info-panel').style.display = 'flex';
-  });
-
-  feed.prepend(card);
-}
-
 // ── SW 메시지 수신 ────────────────────────────────────────────────────────────
 let currentMsgHandler = null;   // 재마운트 시 리스너 중복 등록 방지
 let lastProgressLog   = '';     // 동일 진행 메시지 중복 로그 방지
@@ -841,9 +762,7 @@ function setupMessageListener() {
             null, true  // persist
           );
         }
-        if (settings.translationMode === TRANSLATION_MODES.CREDITS) {
-          loadCreditBalance();
-        }
+        loadCreditBalance();
         break;
       }
 
