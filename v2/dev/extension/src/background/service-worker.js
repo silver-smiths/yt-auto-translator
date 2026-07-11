@@ -547,13 +547,31 @@ async function runTranslationCredits(tabId, settings) {
     const successCount = uploadedCount;
     await reportTranslationResult({ videoId, errors, total: allUploadLangs.length, success: successCount });
 
+    // 처리 이력용 언어별 결과 (성공/실패)
+    const historyItems = allUploadLangs.map(code => {
+      const lang = TARGET_LANGUAGES.find(l => l.code === code);
+      return {
+        code,
+        name: lang?.nativeName || code,
+        ok:   uploadSucceeded.includes(code),
+      };
+    });
+    const creditsUsed = Math.max(0, (balance ?? 0) - (creditsRemaining ?? 0));
+
     const savedTabId   = state.tabId;
+    const wasStopped   = state.shouldStop;
     resetState();
     broadcast({
       type: MSG.TRANSLATION_COMPLETE,
       successCount: successCount,
       errors,
       creditsRemaining,
+      // 구조화 이력 데이터
+      videoId,
+      videoTitle:  videoSnippet?.title || videoId,
+      items:       historyItems,
+      creditsUsed,
+      stopped:     wasStopped,
     }, savedTabId);
 
   } catch (err) {

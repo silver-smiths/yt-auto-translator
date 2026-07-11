@@ -203,6 +203,26 @@ const CSS = `
 }
 .log-dismiss:hover { color: rgba(255,255,255,0.6); }
 
+/* ── 처리 이력 카드 ── */
+.hist-title {
+  font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.88);
+  margin: 5px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.hist-meta { font-size: 10px; color: rgba(255,255,255,0.55); margin-bottom: 5px; line-height: 1.4; }
+.hist-langs { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 5px; }
+.hist-lang { font-size: 9px; padding: 1px 7px; border-radius: 99px; }
+.hist-lang.ok   { background: rgba(3,218,198,0.15); color: #03DAC6; }
+.hist-lang.fail { background: rgba(207,102,121,0.2); color: #ff8a9b; }
+.hist-credit { font-size: 10px; color: rgba(255,255,255,0.45); }
+
+.hist-clear-bar { display: flex; justify-content: flex-end; padding: 2px 0 4px; flex-shrink: 0; }
+.hist-clear-btn {
+  font-size: 10px; color: rgba(255,255,255,0.4);
+  background: none; border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 5px; padding: 3px 9px; cursor: pointer;
+}
+.hist-clear-btn:hover { color: rgba(255,255,255,0.7); border-color: rgba(255,255,255,0.2); }
+
 .credit-feature-row { display: flex; align-items: flex-start; gap: 6px; margin-top: 5px; }
 .credit-feature-icon { font-size: 11px; flex-shrink: 0; margin-top: 1px; }
 .credit-feature-text { font-size: 11px; color: rgba(255,255,255,0.65); line-height: 1.4; }
@@ -306,7 +326,7 @@ export async function mount() {
   renderSidebar();
   loadCreditBalance();
   setupMessageListener();
-  loadLogHistory(); // 이전 번역 기록 복원
+  loadHistory(); // 저장된 처리 이력 복원 (최대 100건)
 
   // 충전 탭에서 돌아왔을 때 잔액 자동 갱신
   if (!visibilityListenerAttached) {
@@ -660,58 +680,135 @@ function updateProgress(pct, current, total) {
   if (pct >= 100 && spinner) spinner.style.display = 'none';
 }
 
-// ── 로그 저장/복원 ───────────────────────────────────────────────────────────
-const MAX_SAVED_LOGS = 20;
+// ── 처리 이력 (구조화, 최대 100건, 사용자가 지우기 전까지 유지) ───────────────
+const MAX_HISTORY = 100;
 
-async function saveLog(type, label, msg) {
+function escapeHtml(s) {
+  return String(s ?? '').replace(/[&<>"']/g, ch =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+async function saveHistoryRecord(record) {
   try {
-    const r = await chrome.storage.local.get('sidebarLogs');
-    const logs = [
-      { type, label, msg, ts: new Date().toISOString() },
-      ...(r.sidebarLogs || []),
-    ].slice(0, MAX_SAVED_LOGS);
-    await chrome.storage.local.set({ sidebarLogs: logs });
+    const r = await chrome.storage.local.get('ytatHistory');
+    const list = [record, ...(r.ytatHistory || [])].slice(0, MAX_HISTORY);
+    await chrome.storage.local.set({ ytatHistory: list });
   } catch {}
 }
 
-async function loadLogHistory() {
+async function clearHistory() {
   try {
-    const r = await chrome.storage.local.get('sidebarLogs');
-    const logs = r.sidebarLogs || [];
-    if (!logs.length) return;
-
+    await chrome.storage.local.remove('ytatHistory');
     const feed = shadow.getElementById('log-feed');
-    const divider = document.createElement('div');
-    divider.style.cssText = 'font-size:10px;color:rgba(255,255,255,0.2);text-align:center;padding:4px 0;';
-    divider.textContent = '── 이전 기록 ──';
-
-    logs.forEach(({ type, label, msg, ts }) => {
-      const card = document.createElement('div');
-      card.className = `log-card ${type}`;
-      const color = type === 'success' ? '#03DAC6' : type === 'error' ? '#CF6679' : '#BB86FC';
-      const time = new Date(ts).toLocaleString('ko-KR', {
-        month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit',
-      });
-      card.innerHTML = `
-        <div class="log-top">
-          <span class="log-type" style="color:${color}">${label}</span>
-          <span class="log-time">${time}</span>
-        </div>
-        <div class="log-msg">${msg}</div>
-      `;
-      feed.appendChild(card);
-    });
-
-    feed.appendChild(divider);
+    if (feed) feed.innerHTML = '';
   } catch {}
 }
 
-// ── 로그 카드 추가 ────────────────────────────────────────────────────────────
-function addLog(type, label, msg, labelColor, persist = false) {
+// 이력 레코드 → 카드 DOM
+function buildHistoryCard(rec) {
+  const card = document.createElement('div');
+  const type = rec.allSkipped ? 'info' : (rec.failCount > 0 ? 'error' : 'success');
+  card.className = `log-card ${type}`;
+
+  const time = new Date(rec.ts).toLocaleString('ko-KR', {
+    month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+  });
+
+  const isErr = !!rec.errorText;
+  const headLabel = isErr ? '❌ 실패'
+    : rec.stopped ? '⏹ 중지됨'
+    : rec.allSkipped ? '💡 건너뜀'
+    : rec.failCount > 0 ? '⚠️ 일부 실패'
+    : '✅ 완료';
+  const headColor = (isErr || rec.failCount > 0) ? '#CF6679' : (rec.allSkipped ? '#BB86FC' : '#03DAC6');
+
+  const items = rec.items || [];
+  let langLine = '';
+  if (isErr) {
+    langLine = `<div class="hist-meta" style="color:#ff8a9b">${escapeHtml(rec.errorText)}</div>`;
+  } else if (rec.allSkipped) {
+    langLine = '<div class="hist-meta">선택한 언어가 이미 모두 번역되어 있었습니다.</div>';
+  } else if (items.length) {
+    const okN   = items.filter(i => i.ok).length;
+    const failN = items.length - okN;
+    const summary = failN > 0
+      ? `🌐 ${items.length}개 언어 · ${okN} 성공 / ${failN} 실패`
+      : `🌐 ${items.length}개 언어 모두 성공`;
+    // 실패가 있으면 실패 언어만 칩으로, 아니면 전부 표시 (좁은 폭 고려)
+    const chips = (failN > 0 ? items : items)
+      .map(i => `<span class="hist-lang ${i.ok ? 'ok' : 'fail'}">${escapeHtml(i.name)}</span>`)
+      .join('');
+    langLine = `<div class="hist-meta">${summary}</div><div class="hist-langs">${chips}</div>`;
+  }
+
+  const creditLine = (rec.creditsUsed != null)
+    ? `<div class="hist-credit">💰 $${rec.creditsUsed.toFixed(2)} 차감${rec.creditsRemaining != null ? ` · 잔액 $${(Math.floor(rec.creditsRemaining * 100) / 100).toFixed(2)}` : ''}</div>`
+    : '';
+
+  card.innerHTML = `
+    <div class="log-top">
+      <span class="log-type" style="color:${headColor}">${headLabel}</span>
+      <span class="log-time">${time}</span>
+    </div>
+    <div class="hist-title">📹 ${escapeHtml(rec.videoTitle || rec.videoId || '영상')}</div>
+    ${langLine}
+    ${creditLine}
+  `;
+  return card;
+}
+
+async function loadHistory() {
+  try {
+    const r = await chrome.storage.local.get('ytatHistory');
+    const list = r.ytatHistory || [];
+    const feed = shadow.getElementById('log-feed');
+    if (!feed) return;
+    ensureClearBar();
+    if (!list.length) return;
+    // 최신순 (저장이 이미 prepend라 그대로)
+    list.forEach(rec => feed.appendChild(buildHistoryCard(rec)));
+  } catch {}
+}
+
+// 이력 지우기 버튼 (기록이 1건이라도 있으면 상단 고정)
+function ensureClearBar() {
+  const feed = shadow.getElementById('log-feed');
+  if (!feed || shadow.getElementById('btn-clear-hist')) return;
+  const clearBar = document.createElement('div');
+  clearBar.className = 'hist-clear-bar';
+  clearBar.innerHTML = `<button class="hist-clear-btn" id="btn-clear-hist">🗑 처리 기록 지우기</button>`;
+  feed.prepend(clearBar);
+  clearBar.querySelector('#btn-clear-hist').addEventListener('click', () => {
+    if (confirm('처리 기록을 모두 지울까요? (되돌릴 수 없습니다)')) clearHistory();
+  });
+}
+
+// 진행 중 생성된 휘발성 로그 카드 제거
+function clearTransientLogs() {
+  const feed = shadow.getElementById('log-feed');
+  if (!feed) return;
+  feed.querySelectorAll('.log-transient').forEach(el => el.remove());
+}
+
+// 새 이력 카드를 피드 최상단(지우기 버튼 아래)에 추가
+function prependHistory(rec) {
+  const feed = shadow.getElementById('log-feed');
+  if (!feed) return;
+  ensureClearBar();
+  const clearBar = shadow.querySelector('.hist-clear-bar');
+  const card = buildHistoryCard(rec);
+  if (clearBar && clearBar.nextSibling) {
+    feed.insertBefore(card, clearBar.nextSibling);
+  } else {
+    feed.appendChild(card);
+  }
+}
+
+// ── 실시간 진행 로그 카드 (휘발성 — 완료 시 구조화 이력으로 별도 저장됨) ──────
+function addLog(type, label, msg, labelColor) {
   const feed = shadow.getElementById('log-feed');
   const card = document.createElement('div');
-  card.className = `log-card ${type}`;
+  card.className = `log-card ${type} log-transient`;
 
   const color = labelColor || (type === 'success' ? '#03DAC6' : type === 'error' ? '#CF6679' : '#BB86FC');
   const time = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
@@ -725,9 +822,6 @@ function addLog(type, label, msg, labelColor, persist = false) {
   `;
 
   feed.prepend(card);
-
-  // 완료/오류 로그는 스토리지에 저장
-  if (persist) saveLog(type, label, msg);
 }
 
 // ── SW 메시지 수신 ────────────────────────────────────────────────────────────
@@ -772,24 +866,43 @@ function setupMessageListener() {
         Object.keys(langChipState).forEach(code => { langChipState[code] = 'done'; });
         renderChips();
         setRunning(false);
-        const successCount = msg.successCount ?? 0;
-        const failCount    = msg.errors?.length ?? 0;
-        if (msg.allSkipped) {
-          addLog('success', 'SUCCESS', '💡 선택한 언어가 모두 이미 번역되어 있어 건너뛰었습니다.', null, true);
-        } else {
-          addLog('success', 'SUCCESS',
-            `✅ 번역 완료! ${successCount}개 언어 업로드 성공${failCount > 0 ? ` (${failCount}개 실패)` : ''}`,
-            null, true  // persist
-          );
-        }
+
+        // 실시간 진행 로그 제거 → 구조화 이력 카드로 대체
+        clearTransientLogs();
+
+        const record = {
+          ts:               new Date().toISOString(),
+          videoId:          msg.videoId,
+          videoTitle:       msg.videoTitle,
+          items:            msg.items || [],
+          successCount:     msg.successCount ?? 0,
+          failCount:        msg.errors?.length ?? 0,
+          creditsUsed:      msg.creditsUsed,
+          creditsRemaining: msg.creditsRemaining,
+          stopped:          !!msg.stopped,
+          allSkipped:       !!msg.allSkipped,
+        };
+        prependHistory(record);
+        saveHistoryRecord(record);
         loadCreditBalance();
         break;
       }
 
       case MSG.TRANSLATION_ERROR: {
         setRunning(false);
+        clearTransientLogs();
         const errText = msg.error || msg.message || '번역 중 오류가 발생했습니다.';
-        addLog('error', 'ERROR', `❌ ${errText}`, null, true);
+        const record = {
+          ts:         new Date().toISOString(),
+          videoId:    msg.videoId,
+          videoTitle: msg.videoTitle,
+          items:      [],
+          successCount: 0,
+          failCount:  1,
+          errorText:  errText,
+        };
+        prependHistory(record);
+        saveHistoryRecord(record);
         if (errText.includes('크레딧')) {
           updateModeStrip();
         }
