@@ -208,8 +208,16 @@ const CSS = `
   font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.88);
   margin: 5px 0; line-height: 1.4;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-  overflow: hidden; /* 2줄까지 표시 후 말줄임 */
+  overflow: hidden; /* 기본 2줄까지 표시 후 말줄임 */
 }
+.hist-title.clamped { cursor: pointer; }
+.hist-title.clamped::after {
+  content: ' ⌄'; color: rgba(255,255,255,0.35); font-weight: 400;
+}
+.hist-title.expanded {
+  -webkit-line-clamp: unset; overflow: visible;
+}
+.hist-title.expanded::after { content: ' ⌃'; }
 .hist-meta { font-size: 10px; color: rgba(255,255,255,0.55); margin-bottom: 5px; line-height: 1.4; }
 .hist-langs { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 5px; }
 .hist-lang { font-size: 9px; padding: 1px 7px; border-radius: 99px; }
@@ -764,15 +772,26 @@ function buildHistoryCard(rec) {
     ? `<div class="hist-credit">💰 $${rec.creditsUsed.toFixed(2)} 차감${rec.creditsRemaining != null ? ` · 잔액 $${(Math.floor(rec.creditsRemaining * 100) / 100).toFixed(2)}` : ''}</div>`
     : '';
 
+  const fullTitle = rec.videoTitle || rec.videoId || '영상';
   card.innerHTML = `
     <div class="log-top">
       <span class="log-type" style="color:${headColor}">${headLabel}</span>
       <span class="log-time">${time}</span>
     </div>
-    <div class="hist-title">📹 ${escapeHtml(rec.videoTitle || rec.videoId || '영상')}</div>
+    <div class="hist-title" title="${escapeHtml(fullTitle)}">📹 ${escapeHtml(fullTitle)}</div>
     ${lines.join('')}
     ${creditLine}
   `;
+
+  // 제목 클릭 → 2줄 ↔ 전체 펼침 토글 (잘린 경우에만 커서/토글 활성)
+  const titleEl = card.querySelector('.hist-title');
+  requestAnimationFrame(() => {
+    if (titleEl.scrollHeight > titleEl.clientHeight + 1) {
+      titleEl.classList.add('clamped');
+      titleEl.addEventListener('click', () => titleEl.classList.toggle('expanded'));
+    }
+  });
+
   return card;
 }
 
