@@ -487,7 +487,9 @@ function updateModeStrip() {
   label.textContent = isLow ? '크레딧 부족' : '크레딧';
   value.textContent = creditBalance != null ? `$${(Math.floor(balance * 100) / 100).toFixed(2)}` : '로딩 중...';
   btnTopup.style.display = 'block';
-  btnTrans.disabled = isLow;
+  // 버튼은 잠그지 않음 — 저장된 번역 재업로드는 크레딧 없이 가능하고,
+  // 실제 부족 여부는 시작 시 SW가 판단해 상황별 안내를 표시함
+  btnTrans.disabled = false;
 }
 
 // ── 크레딧 잔액 조회 ──────────────────────────────────────────────────────────
