@@ -312,6 +312,8 @@ export async function mount() {
   if (!visibilityListenerAttached) {
     visibilityListenerAttached = true;
     document.addEventListener('visibilitychange', () => {
+      // 익스텐션 리로드로 컨텍스트가 무효화된 경우 (chrome.runtime.id 소멸) 조용히 무시
+      if (!chrome.runtime?.id) return;
       if (document.visibilityState === 'visible' && !isRunning) loadCreditBalance();
     });
   }
@@ -494,7 +496,14 @@ function updateModeStrip() {
 
 // ── 크레딧 잔액 조회 ──────────────────────────────────────────────────────────
 async function loadCreditBalance() {
-  const res = await chrome.runtime.sendMessage({ type: 'GET_CREDITS' }).catch(err => ({ error: err.message }));
+  let res;
+  try {
+    res = await chrome.runtime.sendMessage({ type: 'GET_CREDITS' });
+  } catch (err) {
+    // 컨텍스트 무효화(익스텐션 리로드)는 조용히 무시 — 페이지 새로고침 시 정상화
+    if (err?.message?.includes('context invalidated')) return;
+    res = { error: err.message };
+  }
   if (res?.error) {
     console.error('[YTAT] 크레딧 조회 실패:', res.error);
     addLog('error', 'ERROR', `크레딧 조회 실패: ${res.error}`);
