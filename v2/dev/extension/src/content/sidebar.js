@@ -206,7 +206,9 @@ const CSS = `
 /* ── 처리 이력 카드 ── */
 .hist-title {
   font-size: 11px; font-weight: 600; color: rgba(255,255,255,0.88);
-  margin: 5px 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin: 5px 0; line-height: 1.4;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; /* 2줄까지 표시 후 말줄임 */
 }
 .hist-meta { font-size: 10px; color: rgba(255,255,255,0.55); margin-bottom: 5px; line-height: 1.4; }
 .hist-langs { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 5px; }
@@ -723,22 +725,39 @@ function buildHistoryCard(rec) {
   const headColor = (isErr || rec.failCount > 0) ? '#CF6679' : (rec.allSkipped ? '#BB86FC' : '#03DAC6');
 
   const items = rec.items || [];
-  let langLine = '';
+  const skipped = rec.skippedLangs || [];
+  const lines = [];
+
   if (isErr) {
-    langLine = `<div class="hist-meta" style="color:#ff8a9b">${escapeHtml(rec.errorText)}</div>`;
+    lines.push(`<div class="hist-meta" style="color:#ff8a9b">${escapeHtml(rec.errorText)}</div>`);
   } else if (rec.allSkipped) {
-    langLine = '<div class="hist-meta">선택한 언어가 이미 모두 번역되어 있었습니다.</div>';
-  } else if (items.length) {
-    const okN   = items.filter(i => i.ok).length;
-    const failN = items.length - okN;
-    const summary = failN > 0
-      ? `🌐 ${items.length}개 언어 · ${okN} 성공 / ${failN} 실패`
-      : `🌐 ${items.length}개 언어 모두 성공`;
-    // 실패가 있으면 실패 언어만 칩으로, 아니면 전부 표시 (좁은 폭 고려)
-    const chips = (failN > 0 ? items : items)
-      .map(i => `<span class="hist-lang ${i.ok ? 'ok' : 'fail'}">${escapeHtml(i.name)}</span>`)
-      .join('');
-    langLine = `<div class="hist-meta">${summary}</div><div class="hist-langs">${chips}</div>`;
+    lines.push('<div class="hist-meta">선택한 언어가 이미 모두 번역되어 있었습니다.</div>');
+  } else {
+    // 자막 번역 결과
+    if (items.length) {
+      const okN   = items.filter(i => i.ok).length;
+      const failN = items.length - okN;
+      const summary = failN > 0
+        ? `📝 자막 ${items.length}개 언어 · ${okN} 성공 / ${failN} 실패`
+        : `📝 자막 ${items.length}개 언어 번역`;
+      const chips = items
+        .map(i => `<span class="hist-lang ${i.ok ? 'ok' : 'fail'}">${escapeHtml(i.name)}</span>`)
+        .join('');
+      lines.push(`<div class="hist-meta">${summary}</div><div class="hist-langs">${chips}</div>`);
+    }
+    // 이미 등록되어 건너뛴 자막 언어
+    if (skipped.length) {
+      lines.push(`<div class="hist-meta" style="color:rgba(255,255,255,0.4)">↩️ 이미 번역된 ${skipped.length}개 언어는 건너뜀</div>`);
+    }
+    // 제목/설명 번역
+    if (rec.metaTitle || rec.metaDesc) {
+      const t = [rec.metaTitle && '제목', rec.metaDesc && '설명'].filter(Boolean).join('·');
+      lines.push(`<div class="hist-meta">🌐 ${t} 다국어 번역 등록</div>`);
+    }
+    // 아무것도 안 한 경우 방어
+    if (!lines.length) {
+      lines.push('<div class="hist-meta">처리할 새 항목이 없었습니다.</div>');
+    }
   }
 
   const creditLine = (rec.creditsUsed != null)
@@ -751,7 +770,7 @@ function buildHistoryCard(rec) {
       <span class="log-time">${time}</span>
     </div>
     <div class="hist-title">📹 ${escapeHtml(rec.videoTitle || rec.videoId || '영상')}</div>
-    ${langLine}
+    ${lines.join('')}
     ${creditLine}
   `;
   return card;
@@ -875,6 +894,9 @@ function setupMessageListener() {
           videoId:          msg.videoId,
           videoTitle:       msg.videoTitle,
           items:            msg.items || [],
+          skippedLangs:     msg.skippedLangs || [],
+          metaTitle:        !!msg.metaTitle,
+          metaDesc:         !!msg.metaDesc,
           successCount:     msg.successCount ?? 0,
           failCount:        msg.errors?.length ?? 0,
           creditsUsed:      msg.creditsUsed,

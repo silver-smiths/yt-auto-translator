@@ -518,12 +518,14 @@ async function runTranslationCredits(tabId, settings) {
     await saveTranslations(videoId, allLangResults, uploadFailed);
 
     // 6-1. 제목/설명 번역 (크레딧 모드 — 자막과 별도 mini job)
+    let metaDone = false;
     if ((settings.translateTitle || settings.translateDescription) && !state.shouldStop) {
       try {
         await translateAndUploadMetadataCredits(
           videoId, videoSnippet, settings.targetLangs,
           getLangName(trackInfo.language), settings
         );
+        metaDone = true;
       } catch (err) {
         log(`제목/설명 번역 실패: ${err.message}`, LOG_LEVEL.WARN);
       }
@@ -570,6 +572,9 @@ async function runTranslationCredits(tabId, settings) {
       videoId,
       videoTitle:  videoSnippet?.title || videoId,
       items:       historyItems,
+      skippedLangs: alreadyTranslated || [], // 이미 자막이 있어 건너뛴 언어명
+      metaTitle:   metaDone && settings.translateTitle,
+      metaDesc:    metaDone && settings.translateDescription,
       creditsUsed,
       stopped:     wasStopped,
     }, savedTabId);
