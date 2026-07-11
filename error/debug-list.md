@@ -1,6 +1,56 @@
 # YTAT 디버깅 목록
 
-최종 점검일: 2026-07-09 (텔레그램/공지/전체 코드리뷰 3종 점검 → 일괄 수정 완료)
+최종 점검일: 2026-07-12 (시나리오/UX/코드리뷰 3종 최종 검증)
+
+---
+
+## ✅ 2026-07-12 일괄 수정 완료 (커밋 f16e46f, 6c60856 / Workers·Vercel 배포)
+
+F1, F2, F3, F4, F5, F6, F10, F12, F13, F14, F15, SB-2 — 아래 목록의 해당 항목 전부 수정·배포됨.
+검증: 전 파일 문법/번들 통과, 릴레이 실번역 재확인, 악의적 base 차단 유지.
+
+**미수정 잔여 (정책·구조 판단 필요):**
+- F7 (반복 실행 메타 재과금): 필터 추가는 쉬우나 "제목/설명 갱신을 매번 허용할지" 정책 결정 필요
+- F8 (자막OFF인데 원본자막 없으면 실패): prepareSubtitles 분리 필요 — 중간 규모 리팩터
+- F9 (탭 닫으면 이력 유실): SW측 이력 저장으로 옮기는 구조 변경
+- F11 (만료 문구 모순): 법무/정책 결정 — 데드 패널(#credit-info-panel) 제거 or 재작성
+- 환율 1400 vs 1350 (사장님 보류 지시)
+- deduct 동시 PATCH 레이스 (SQL 멱등성 — 단일 사용자 자기손해)
+
+---
+
+## 🔴 2026-07-12 최종 검증 발견 (수정 이력 — 위 완료 섹션 참조)
+
+### F1. 크레딧 차감 RPC 에러 은폐 → 무과금 (매출 직결) — 직접 검증 완료
+
+- **위치:** `backend/src/routes/translate.js:346~360` (PATCH /job), 동일 패턴 `:255` (increment_job_tokens)
+- **문제:** supabase-js `.rpc()`는 실패해도 throw하지 않고 `{error}`를 반환 — try/catch가 무의미. `deduct_credits`가 실패해도 `deducted_at`이 기록돼 해당 번역이 **영구 무과금**
+- **수정 방향:** `const { error } = await sb.rpc(...)` 후 error면 deducted_at 기록하지 않음 (웹훅 grant/refund와 동일 패턴으로)
+
+## 🟡 2026-07-12 발견 (미수정)
+
+| # | 내용 | 위치 |
+|---|------|------|
+| F2 | 업로드 전부 성공 후 job PATCH 실패 시 "전체 실패"로 오보고 + 성공 이력 유실 | service-worker.js:538 (try 블록 안) |
+| F3 | 쿼터 초과 전용 안내("내일 무료 자동 등록") 도달 불가 — youtube-api가 한국어로 throw하는데 매칭 토큰이 영어 | youtube-api.js:74 ↔ service-worker.js getUploadErrorMessage |
+| F4 | 청크 진행 메시지가 매번 로그 카드로 쌓임 (isChunkUpdate 미송신 — 크레딧 모드 회귀) + 언어 칩이 번역 단계 내내 빈 상태 (targetLangs 미송신) | service-worker.js broadcast ↔ sidebar 필터 |
+| F5 | fatal 실패/allSkipped 이력 카드 제목이 항상 "영상" (videoId/videoTitle 미탑재) | service-worker.js:316, :597 |
+| F6 | 번역 실행 중 설정 저장 시 변경 영구 유실 (isRunning 가드가 재적용 없이 버림) | sidebar.js storage.onChanged |
+| F7 | 반복 실행마다 제목/설명 재번역·재과금 (기등록 여부 무관, targetLangs 무필터) | service-worker.js 메타데이터 호출부 |
+| F8 | 자막 OFF(제목/설명만)여도 원본 자막 없으면 전체 실패 | prepareSubtitles 무조건 실행 |
+| F9 | 번역 중 탭 닫으면 완료 이력·차감 내역 표시 유실 (이력 저장이 사이드바 수신 측에만 존재) — 구조적 | sidebar.js 이력 시스템 |
+| F10 | startTranslation이 SW 거부 응답("이미 진행 중") 무시 — 두 번째 탭에서 무반응 | sidebar.js startTranslation |
+| F11 | 카피 모순: 사이드바(데드 패널) "만료되지 않습니다" vs 결제 페이지 "3개월 자동 소멸" + 백엔드 만료 로직 미구현 — 법무 검토 필요 | sidebar.js ↔ ytat-credits.html |
+| F12 | 막다른 오류 문구 3건 (API 키 재확인/모드 전환/앱 로그 — 존재하지 않는 UI 안내) | service-worker.js friendlyError |
+| F13 | 계좌송금 버튼 초기 라벨 ₩20,000 하드코딩 (로드 시 updateAll 미호출) + formsubmit 제출 후 외부 페이지 이탈 | ytat-credits.html |
+| F14 | 중지 버튼 클릭 시 즉시 피드백 없음 (배치 종료까지 무반응) | sidebar.js / SW |
+| F15 | 시작 전 예상 차감액 미표시 (estCostPerLang 계산값 미노출) | service-worker.js |
+
+## ❎ 검증 과정에서 기각된 오보
+
+- ~~웹훅이 이메일로 사용자 매칭 → 지급 실패~~ → 실제로는 merchant_uid(portone_id) 매칭. buyer_email 공백 무해
+- ~~환율 불일치 해소됨~~ → 여전히 페이지 1,400 vs 백엔드 1,350 (사장님 보류 지시 항목)
+- perLang/creditsUsed/릴레이 화이트리스트 — 마지막 3건 수정의 회귀 없음 확인
 
 ---
 
