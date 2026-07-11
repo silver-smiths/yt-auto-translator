@@ -7,6 +7,7 @@ import translateRouter from './routes/translate.js';
 import webhookRouter   from './routes/webhook.js';
 import noticesRouter   from './routes/notices.js';
 import adminRouter     from './routes/admin.js';
+import geminiRelayRouter from './routes/gemini-relay.js';
 
 const app = new Hono();
 
@@ -28,6 +29,9 @@ app.get('/health', (c) => c.json({ ok: true, version: '1.0.0' }));
 
 // ── 웹훅 (인증 불필요 — Portone이 직접 호출) ─────────────
 app.route('/webhook', webhookRouter);
+
+// ── Gemini 릴레이 (자체 시크릿 인증 — Workers가 미국 리전 경유 호출) ─────────
+app.route('/gemini/relay', geminiRelayRouter);
 
 // ── 공지 어드민 라우트 (GET 포함 전 메서드) ──────────────
 app.use('/notices/admin/*', authMiddleware, adminMiddleware);

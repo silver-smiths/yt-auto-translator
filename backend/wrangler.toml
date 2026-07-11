@@ -17,6 +17,8 @@ invocation_logs = true
 [vars]
 ENVIRONMENT = "production"
 GEMINI_MODEL = "gemini-2.5-flash"
+# Gemini 릴레이 — Workers(홍콩 라우팅 위험)가 Vercel(미국 iad1)을 경유해 Gemini 호출
+GEMINI_RELAY_URL = "https://backend-three-alpha-60.vercel.app/gemini/relay"
 
 # Secrets (wrangler secret put 으로 등록)
 # SUPABASE_URL

@@ -64,37 +64,45 @@ async function callGemini(env, model, subtitles, offset, targetLangs, sourceLang
     const prompt = buildPrompt(subtitles, offset, targetLangs, sourceLang);
     const schema = buildResponseSchema(targetLangs);
 
-    const res = await fetch(
-      `${base}/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`,
-      {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        signal:  controller.signal,
-        body: JSON.stringify({
-          systemInstruction: {
-            parts: [{ text:
-              'You are a professional subtitle translator. ' +
-              'Return ONLY valid JSON matching the given schema. ' +
-              'Translate every single line. Never skip, merge, or deduplicate lines.'
-            }]
-          },
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature:      0.2,
-            maxOutputTokens:  65536,
-            responseMimeType: 'application/json',
-            responseSchema:   schema,
-            thinkingConfig:   { thinkingBudget: 0 }, // 번역엔 불필요 — thinking 토큰($2.50/M) 비용 차단
-          },
-          safetySettings: [
-            { category: 'HARM_CATEGORY_HARASSMENT',        threshold: 'BLOCK_NONE' },
-            { category: 'HARM_CATEGORY_HATE_SPEECH',       threshold: 'BLOCK_NONE' },
-            { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-            { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-          ],
-        }),
-      }
-    );
+    const geminiPayload = {
+      systemInstruction: {
+        parts: [{ text:
+          'You are a professional subtitle translator. ' +
+          'Return ONLY valid JSON matching the given schema. ' +
+          'Translate every single line. Never skip, merge, or deduplicate lines.'
+        }]
+      },
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature:      0.2,
+        maxOutputTokens:  65536,
+        responseMimeType: 'application/json',
+        responseSchema:   schema,
+        thinkingConfig:   { thinkingBudget: 0 }, // 번역엔 불필요 — thinking 토큰($2.50/M) 비용 차단
+      },
+      safetySettings: [
+        { category: 'HARM_CATEGORY_HARASSMENT',        threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_HATE_SPEECH',       threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+      ],
+    };
+
+    // Cloudflare Workers는 홍콩 콜로로 라우팅될 수 있어 Gemini가 지역 차단(400)함.
+    // GEMINI_RELAY_URL(미국 리전 고정 Vercel 함수)이 설정되면 그쪽을 경유한다.
+    const res = env.GEMINI_RELAY_URL
+      ? await fetch(env.GEMINI_RELAY_URL, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'x-relay-secret': env.GEMINI_RELAY_SECRET || '' },
+          signal:  controller.signal,
+          body: JSON.stringify({ model, base, payload: geminiPayload }),
+        })
+      : await fetch(`${base}/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`, {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal:  controller.signal,
+          body: JSON.stringify(geminiPayload),
+        });
 
     clearTimeout(timer);
 
