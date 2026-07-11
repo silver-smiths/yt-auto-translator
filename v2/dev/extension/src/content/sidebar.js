@@ -284,6 +284,7 @@ let isRunning = false;
 let settings = null;
 let creditBalance = null;
 let langChipState = {}; // code → 'pending'|'active'|'done'
+let visibilityListenerAttached = false;
 
 // ── 진입점 ────────────────────────────────────────────────────────────────────
 export async function mount() {
@@ -306,6 +307,14 @@ export async function mount() {
   loadCreditBalance();
   setupMessageListener();
   loadLogHistory(); // 이전 번역 기록 복원
+
+  // 충전 탭에서 돌아왔을 때 잔액 자동 갱신
+  if (!visibilityListenerAttached) {
+    visibilityListenerAttached = true;
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && !isRunning) loadCreditBalance();
+    });
+  }
 }
 
 // ── 접기 탭 ───────────────────────────────────────────────────────────────────

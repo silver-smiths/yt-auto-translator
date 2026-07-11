@@ -42,9 +42,9 @@ app.post('/checkout', async (c) => {
     return c.json({ error: '지원하지 않는 통화입니다. (USD, KRW만 허용)' }, 400);
   }
 
-  // 최소 충전 금액 검증
-  const minUSD = 10;
-  const minKRW = 15000;
+  // 최소 충전 금액 검증 (결제 페이지 ytat-credits.html과 동일하게 유지할 것)
+  const minUSD = 5;
+  const minKRW = 5000;
 
   if (currency === 'USD' && amount < minUSD) {
     return c.json({ error: `최소 충전 금액은 $${minUSD}입니다.` }, 400);
