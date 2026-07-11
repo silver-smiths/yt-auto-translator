@@ -4,8 +4,10 @@
  * Dynamically imports sidebar.js on YouTube Studio video edit pages.
  */
 (async () => {
+  // 특정 영상의 모든 편집 메뉴에서 동작 (세부정보/분석/편집기/댓글/언어/소유권/클립 등)
+  // 공통 경로: /video/{영상ID}/...
   function isVideoEditPage() {
-    return /\/video\/[^/]+\/edit/.test(location.pathname);
+    return /\/video\/[^/]+\//.test(location.pathname);
   }
 
   async function tryMount() {
