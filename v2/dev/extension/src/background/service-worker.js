@@ -499,7 +499,8 @@ async function runTranslationCredits(tabId, settings) {
         uploadFailed.push(code);
         const detail = getUploadErrorMessage(err, lang.name);
         errors.push({ lang: lang.name, message: detail });
-        broadcast({ type: MSG.TRANSLATION_ERROR, error: detail, lang: code });
+        // perLang: 작업 전체 실패가 아니라 개별 언어 실패 — sidebar가 종료/이력저장 하지 않도록 구분
+        broadcast({ type: MSG.TRANSLATION_ERROR, error: detail, lang: code, perLang: true });
       }
     }
 
@@ -537,8 +538,8 @@ async function runTranslationCredits(tabId, settings) {
       await updateTranslationJob(jobId, { status: finalStatus });
     }
 
-    // 8. 잔여 크레딧 조회
-    let creditsRemaining = 0;
+    // 8. 잔여 크레딧 조회 (실패 시 null — 이력에 금액을 오표기하지 않기 위해)
+    let creditsRemaining = null;
     try {
       const updated = await fetchCredits();
       creditsRemaining = updated.balance;
@@ -558,7 +559,10 @@ async function runTranslationCredits(tabId, settings) {
         ok:   uploadSucceeded.includes(code),
       };
     });
-    const creditsUsed = Math.max(0, (balance ?? 0) - (creditsRemaining ?? 0));
+    // 잔액 조회가 성공했을 때만 차감액 계산 (실패 시 null → 이력에 금액 미표시)
+    const creditsUsed = (creditsRemaining != null && balance != null)
+      ? Math.max(0, balance - creditsRemaining)
+      : null;
 
     const savedTabId   = state.tabId;
     const wasStopped   = state.shouldStop;

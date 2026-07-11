@@ -937,9 +937,17 @@ function setupMessageListener() {
       }
 
       case MSG.TRANSLATION_ERROR: {
+        const errText = msg.error || msg.message || '번역 중 오류가 발생했습니다.';
+
+        // 개별 언어 실패(perLang): 작업은 계속 진행 중 — 종료/이력저장 하지 않고 진행 로그만 추가
+        if (msg.perLang) {
+          addLog('error', 'ERROR', `❌ ${errText}`);
+          break;
+        }
+
+        // 작업 전체 실패(예외): 종료 + 이력 저장
         setRunning(false);
         clearTransientLogs();
-        const errText = msg.error || msg.message || '번역 중 오류가 발생했습니다.';
         const record = {
           ts:         new Date().toISOString(),
           videoId:    msg.videoId,
