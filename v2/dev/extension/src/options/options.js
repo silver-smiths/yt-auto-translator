@@ -8,8 +8,6 @@ import { loadSettings, saveSettings } from '../lib/storage.js';
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const welcomeCard      = document.getElementById('welcomeCard');
-const welcomeStep1     = document.getElementById('welcomeStep1');
-const welcomeStep2     = document.getElementById('welcomeStep2');
 const creditBalance    = document.getElementById('creditBalance');
 const btnTopup         = document.getElementById('btnTopup');
 const sourceLang       = document.getElementById('sourceLang');
@@ -25,27 +23,10 @@ const saveStatus            = document.getElementById('saveStatus');
 let selectedLangs = new Set();
 
 // ── 웰컴 카드 ─────────────────────────────────────────────────────────────────
-function showWelcomeStep(step) {
-  welcomeStep1.style.display = step === 1 ? '' : 'none';
-  welcomeStep2.style.display = step === 2 ? '' : 'none';
-}
-
 document.getElementById('btnDismissWelcome').addEventListener('click', async () => {
   welcomeCard.style.display = 'none';
   const settings = await loadSettings();
   await saveSettings({ ...settings, welcomeDismissed: true });
-});
-
-document.getElementById('welcomeCtaCredits').addEventListener('click', () => {
-  showWelcomeStep(2);
-});
-
-document.getElementById('welcomeCtaTopup').addEventListener('click', () => {
-  chrome.tabs.create({ url: PAYMENT_URL });
-});
-
-document.getElementById('welcomeBack2').addEventListener('click', () => {
-  showWelcomeStep(1);
 });
 
 // ── 크레딧 잔액 조회 ──────────────────────────────────────────────────────────
@@ -111,6 +92,7 @@ const noticePagination  = document.getElementById('noticePagination');
 let noticePage = 1;
 let noticeTotalPages = 1;
 let readIds = new Set();
+let preloadedFirstPage = null; // 페이지 로드 시 미리 받아둔 1페이지 (모달 즉시 표시용)
 
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, ch =>
@@ -123,40 +105,54 @@ async function initNotices() {
   try {
     const res = await fetch(`${API_BASE}/notices?page=1`);
     if (!res.ok) return;
-    const { notices } = await res.json();
-    const hasUnread = notices.some(n => !readIds.has(String(n.id)));
+    const data = await res.json();
+    preloadedFirstPage = data; // 모달 오픈 시 즉시 표시용 프리로드
+    const hasUnread = data.notices.some(n => !readIds.has(String(n.id)));
     noticeBadge.style.display = hasUnread ? 'flex' : 'none';
   } catch { /* 네트워크 오류는 조용히 무시 */ }
+}
+
+function renderNoticeItems(notices) {
+  if (!notices.length) {
+    noticeList.innerHTML = '<li style="padding:24px;text-align:center;color:#aaa;list-style:none;">공지사항이 없습니다.</li>';
+    return;
+  }
+  noticeList.innerHTML = notices.map(n => {
+    const isRead = readIds.has(String(n.id));
+    const date = n.created_at.slice(0, 10);
+    return `<li class="notice-item ${isRead ? 'read' : 'unread'}" data-id="${n.id}">
+      <span class="notice-item-title">${escapeHtml(n.title)}</span>
+      <span class="notice-item-date">${date}</span>
+    </li>`;
+  }).join('');
+  noticeList.querySelectorAll('.notice-item').forEach(el => {
+    el.addEventListener('click', () => openNoticeDetail(el.dataset.id));
+  });
 }
 
 async function loadNoticeList(page = 1) {
   noticeDetail.style.display = 'none';
   noticeList.style.display = '';
   noticePagination.style.display = '';
+
+  // 프리로드된 1페이지가 있으면 즉시 표시, 없으면 로딩 표시
+  if (page === 1 && preloadedFirstPage) {
+    noticePage = 1;
+    noticeTotalPages = preloadedFirstPage.totalPages || 1;
+    renderNoticeItems(preloadedFirstPage.notices);
+    renderNoticePagination();
+    return;
+  }
   noticeList.innerHTML = '<li style="padding:24px;text-align:center;color:#aaa;list-style:none;">로딩 중...</li>';
 
   try {
     const res = await fetch(`${API_BASE}/notices?page=${page}`);
     if (!res.ok) throw new Error();
-    const { notices, totalPages } = await res.json();
+    const data = await res.json();
     noticePage = page;
-    noticeTotalPages = totalPages || 1;
-
-    if (!notices.length) {
-      noticeList.innerHTML = '<li style="padding:24px;text-align:center;color:#aaa;list-style:none;">공지사항이 없습니다.</li>';
-    } else {
-      noticeList.innerHTML = notices.map(n => {
-        const isRead = readIds.has(String(n.id));
-        const date = n.created_at.slice(0, 10);
-        return `<li class="notice-item ${isRead ? 'read' : 'unread'}" data-id="${n.id}">
-          <span class="notice-item-title">${escapeHtml(n.title)}</span>
-          <span class="notice-item-date">${date}</span>
-        </li>`;
-      }).join('');
-      noticeList.querySelectorAll('.notice-item').forEach(el => {
-        el.addEventListener('click', () => openNoticeDetail(el.dataset.id));
-      });
-    }
+    noticeTotalPages = data.totalPages || 1;
+    if (page === 1) preloadedFirstPage = data;
+    renderNoticeItems(data.notices);
     renderNoticePagination();
   } catch {
     noticeList.innerHTML = '<li style="padding:24px;text-align:center;color:#f87171;list-style:none;">불러오기 실패</li>';
@@ -205,6 +201,14 @@ noticeBack.addEventListener('click', () => { loadNoticeList(noticePage); });
 noticeModal.addEventListener('click', e => { if (e.target === noticeModal) noticeModal.style.display = 'none'; });
 
 initNotices();
+
+// ── 문의하기 — 외부 폼 이동 전 확인 ──────────────────────────────────────────
+document.getElementById('btnFeedback').addEventListener('click', (e) => {
+  e.preventDefault();
+  if (confirm('문의 페이지(Google Forms)로 이동할까요?')) {
+    chrome.tabs.create({ url: 'https://forms.gle/yQkUQJJW3eX2A8AeA' });
+  }
+});
 
 // ── 소스 언어 빌드 ────────────────────────────────────────────────────────────
 function buildSourceLang(selected) {

@@ -56,8 +56,8 @@ export const DEFAULT_SETTINGS = {
   targetLangs:          TARGET_LANGUAGES.map(l => l.code).filter(c => c !== 'ko'),
   welcomeDismissed:     false,
   translateSubtitles:   true,
-  translateTitle:       false,
-  translateDescription: false,
+  translateTitle:       true,
+  translateDescription: true,
 };
 
 // ── 메시지 타입 ───────────────────────────────────────────────────────────────

@@ -14,50 +14,21 @@
   <!-- ── 웰컴 카드 (최초 설치 시만 표시) ── -->
   <div class="welcome-card" id="welcomeCard">
     <button class="welcome-close" id="btnDismissWelcome" title="닫기">×</button>
-
-    <!-- 스텝 1: 기본 -->
-    <div id="welcomeStep1">
-      <div class="welcome-title">YouTube 자막 번역을 자동화하세요 🚀</div>
-      <div class="welcome-features">
-        <div class="welcome-feature">
-          <span class="welcome-feature-icon">🌍</span>
-          <span>Gemini AI로 <strong>26개 언어 자막</strong>을 한 번에 자동 번역</span>
-        </div>
-        <div class="welcome-feature">
-          <span class="welcome-feature-icon">📤</span>
-          <span>번역 결과가 <strong>YouTube Studio에 직접 등록</strong> — 파일 작업 없음</span>
-        </div>
-        <div class="welcome-feature">
-          <span class="welcome-feature-icon">⚡</span>
-          <span>최대 속도로 <strong>여러 언어 동시 번역</strong> — API 키 설정 불필요</span>
-        </div>
+    <div class="welcome-title">YouTube 자막 번역을 자동화하세요 🚀</div>
+    <div class="welcome-features">
+      <div class="welcome-feature">
+        <span class="welcome-feature-icon">🌍</span>
+        <span>AI가 <strong>26개 언어 자막·제목·설명</strong>을 한 번에 자동 번역</span>
       </div>
-      <button class="welcome-cta" id="welcomeCtaCredits">크레딧으로 바로 시작 →</button>
-    </div>
-
-    <!-- 스텝 2: 크레딧 선택 후 -->
-    <div id="welcomeStep2" style="display:none;">
-      <div class="welcome-title">거의 다 됐어요! 🎉</div>
-      <div class="welcome-features">
-        <div class="welcome-feature">
-          <span class="welcome-feature-icon">✅</span>
-          <span>번역 방식 선택 완료 — <strong>크레딧 모드</strong></span>
-        </div>
-        <div class="welcome-feature">
-          <span class="welcome-feature-icon">💳</span>
-          <span>크레딧을 충전하면 <strong>바로 사용</strong>할 수 있습니다</span>
-        </div>
-        <div class="welcome-feature">
-          <span class="welcome-feature-icon">🌍</span>
-          <span>충전 후 <strong>YouTube Studio 영상 편집 페이지</strong>로 이동해 번역을 시작하세요</span>
-        </div>
+      <div class="welcome-feature">
+        <span class="welcome-feature-icon">📤</span>
+        <span>번역 결과가 <strong>YouTube Studio에 직접 등록</strong> — 파일 작업 없음</span>
       </div>
-      <button class="welcome-cta" id="welcomeCtaTopup">크레딧 충전하기 →</button>
-      <div class="welcome-note">
-        <button class="welcome-link" id="welcomeBack2">← 다시 선택하기</button>
+      <div class="welcome-feature">
+        <span class="welcome-feature-icon">💳</span>
+        <span>크레딧 충전 후 <strong>YouTube Studio 영상 편집 페이지</strong>에서 번역을 시작하세요</span>
       </div>
     </div>
-
   </div>
 
   <!-- ── 크레딧 ── -->
@@ -82,11 +53,11 @@
         <span>자막</span>
       </label>
       <label class="target-option">
-        <input type="checkbox" id="translateTitle">
+        <input type="checkbox" id="translateTitle" checked>
         <span>제목</span>
       </label>
       <label class="target-option">
-        <input type="checkbox" id="translateDescription">
+        <input type="checkbox" id="translateDescription" checked>
         <span>설명</span>
       </label>
     </div>
@@ -132,7 +103,7 @@
 </div>
 
 <!-- ── 플로팅 피드백 버튼 ── -->
-<a class="btn-feedback" href="https://forms.gle/yQkUQJJW3eX2A8AeA" target="_blank">
+<a class="btn-feedback" id="btnFeedback" href="https://forms.gle/yQkUQJJW3eX2A8AeA" target="_blank">
   📝
   <span class="btn-feedback-tooltip">문의하기 / Feedback</span>
 </a>
