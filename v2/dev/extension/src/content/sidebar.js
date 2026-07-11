@@ -347,9 +347,10 @@ export async function mount() {
       if (document.visibilityState === 'visible' && !isRunning) loadCreditBalance();
     });
 
-    // 설정(언어·번역 대상 등) 변경을 실시간 반영 — 옵션 페이지에서 저장 시 즉시 갱신
+    // 설정(언어·번역 대상 등) 변경을 실시간 반영 — 옵션 페이지에서 저장 시 즉시 갱신.
+    // 진행 중 번역은 시작 시점에 SW로 settings를 이미 넘겼으므로 영향 없음(다음 시작부터 적용).
     chrome.storage.onChanged.addListener((changes, area) => {
-      if (area === 'local' && changes.settings && !isRunning) {
+      if (area === 'local' && changes.settings?.newValue) {
         settings = { ...settings, ...changes.settings.newValue };
       }
     });
@@ -486,8 +487,14 @@ function buildSidebarHTML() {
 function bindSidebarEvents(sidebar) {
   sidebar.querySelector('#btn-close').addEventListener('click', collapse);
 
-  sidebar.querySelector('#btn-translate').addEventListener('click', () => {
+  sidebar.querySelector('#btn-translate').addEventListener('click', (e) => {
     if (isRunning) {
+      // 중지 즉시 피드백 — 현재 배치가 끝날 때까지 걸릴 수 있으므로 버튼을 잠그고 안내
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      btn.innerHTML = '■&nbsp; 중지 중...';
+      const label = shadow.getElementById('progress-label');
+      if (label) label.textContent = '현재 작업을 마무리한 뒤 중지됩니다...';
       chrome.runtime.sendMessage({ type: MSG.STOP_TRANSLATION });
     } else {
       startTranslation();
@@ -616,7 +623,11 @@ async function dismissCard(id, el) {
 
 // ── 번역 시작 ─────────────────────────────────────────────────────────────────
 function startTranslation() {
-  chrome.runtime.sendMessage({ type: MSG.START_TRANSLATION, settings });
+  chrome.runtime.sendMessage({ type: MSG.START_TRANSLATION, settings }, (res) => {
+    // SW가 거부(이미 진행 중 / 탭 없음)하면 사용자에게 안내
+    if (chrome.runtime.lastError) return; // 컨텍스트 무효화 등은 조용히 무시
+    if (res?.error) addLog('error', 'ERROR', `⚠️ ${res.error}`);
+  });
 }
 
 // ── 번역 상태 UI ──────────────────────────────────────────────────────────────
@@ -808,8 +819,8 @@ async function loadHistory() {
     const list = r.ytatHistory || [];
     const feed = shadow.getElementById('log-feed');
     if (!feed) return;
+    if (!list.length) return; // 기록 없으면 지우기 버튼도 표시 안 함
     ensureClearBar();
-    if (!list.length) return;
     // 최신순 (저장이 이미 prepend라 그대로)
     list.forEach(rec => feed.appendChild(buildHistoryCard(rec)));
   } catch {}

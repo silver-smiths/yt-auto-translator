@@ -250,15 +250,16 @@ app.post('/chunk', async (c) => {
 
   const apiCostUsd = (inputTokens * INPUT_PER_M + outputTokens * OUTPUT_PER_M) / 1_000_000;
 
-  // 토큰 사용량 기록 (성공/실패 무관 — 과금 기준)
+  // 토큰 사용량 기록 (성공/실패 무관 — 과금 기준). rpc는 throw하지 않으므로 error 검사 필수.
   if (inputTokens > 0 || outputTokens > 0) {
-    await sb.rpc('increment_job_tokens', {
+    const { error: incError } = await sb.rpc('increment_job_tokens', {
       p_job_id:        job_id,
       p_input_tokens:  inputTokens,
       p_output_tokens: outputTokens,
       p_api_cost:      apiCostUsd,
       p_credits:       apiCostUsd * CREDIT_MULTIPLIER,
-    }).maybeSingle();
+    });
+    if (incError) console.error('[chunk] increment_job_tokens 실패:', incError.message, { job_id });
   }
 
   // 전부 실패 시 504 (토큰은 기록됐으므로 PATCH failed 시 차감됨)
@@ -343,20 +344,22 @@ app.patch('/job/:id', async (c) => {
 
   // 완료/실패/중단 시 크레딧 차감 (idempotency: deducted_at으로 이중 차감 방지)
   if (['completed', 'failed', 'stopped'].includes(status) && job.api_cost_usd > 0 && !job.deducted_at) {
-    try {
-      await sb.rpc('deduct_credits', {
-        p_user_id:    userId,
-        p_job_id:     jobId,
-        p_api_cost:   job.api_cost_usd,
-        p_multiplier: CREDIT_MULTIPLIER,
-      });
+    // supabase-js rpc는 throw하지 않고 {error}를 반환하므로 반드시 error를 검사해야 함.
+    // 차감이 실패했는데 deducted_at을 기록하면 영구 무과금이 되므로, 성공했을 때만 마킹한다.
+    const { error: deductError } = await sb.rpc('deduct_credits', {
+      p_user_id:    userId,
+      p_job_id:     jobId,
+      p_api_cost:   job.api_cost_usd,
+      p_multiplier: CREDIT_MULTIPLIER,
+    });
+    if (deductError) {
+      console.error('[PATCH] deduct_credits 실패:', deductError.message, { jobId, userId });
+      // deducted_at 미기록 → 재전송/재호출 시 재시도 가능
+    } else {
       await sb
         .from('translation_jobs')
         .update({ deducted_at: new Date().toISOString() })
         .eq('id', jobId);
-    } catch (err) {
-      console.error('[PATCH] deduct_credits 실패:', err.message, { jobId, userId });
-      // 차감 실패는 기록하되 응답은 정상 처리 (재시도 로직 없음 - deducted_at으로 보호)
     }
   }
 

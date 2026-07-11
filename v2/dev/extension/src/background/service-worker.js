@@ -68,7 +68,7 @@ function friendlyError(err) {
   }
   if (msg.includes('401') || msg.includes('api_key_invalid') ||
       msg.includes('api key not valid') || msg.includes('invalid api key')) {
-    return 'Gemini API 키가 올바르지 않습니다. ⚙️ 설정 페이지에서 API 키를 다시 확인해 주세요.';
+    return '일시적인 서버 오류가 발생했습니다. 잠시 후 다시 시도하고, 계속되면 문의해 주세요.';
   }
   if (msg.includes('403') || msg.includes('forbidden') ||
       msg.includes('insufficientpermissions') || msg.includes('access denied')) {
@@ -76,7 +76,7 @@ function friendlyError(err) {
   }
   if (msg.includes('429') || msg.includes('rate limit') || msg.includes('quota') ||
       msg.includes('resource_exhausted') || msg.includes('too many requests')) {
-    return 'API 요청 한도를 초과했습니다. 잠시 후 다시 시도하거나, ⚙️ 설정에서 크레딧 모드로 전환해 주세요.';
+    return 'API 요청 한도를 초과했습니다. 잠시 후 다시 시도해 주세요.';
   }
   if (msg.includes('all_fallbacks_failed')) {
     return '번역 서버가 일시적으로 응답하지 않습니다. 잠시 후 다시 시도해 주세요.';
@@ -98,7 +98,8 @@ function friendlyError(err) {
 function getUploadErrorMessage(err, langName) {
   const msg = (err?.message || String(err)).toLowerCase();
 
-  if (msg.includes('quotaexceeded') || (msg.includes('quota') && msg.includes('exceeded'))) {
+  if (msg.includes('quotaexceeded') || msg.includes('할당량') ||
+      (msg.includes('quota') && msg.includes('exceeded'))) {
     return `[${langName}] YouTube 일일 API 한도 초과 — 번역 결과는 저장되었습니다. 내일(태평양 표준시 자정) 이후 다시 번역을 시작하면 추가 크레딧 없이 자막이 자동 등록됩니다.`;
   }
   if (msg.includes('forbidden') || msg.includes('insufficientpermissions') || msg.includes('access denied')) {
@@ -119,7 +120,7 @@ function getUploadErrorMessage(err, langName) {
   if (msg.includes('500') || msg.includes('internal server')) {
     return `[${langName}] YouTube 서버 오류 — 일시적인 문제입니다. 잠시 후 다시 시도해 주세요.`;
   }
-  return `[${langName}] 자막 등록 실패 (${err?.message || '알 수 없는 오류'}) — 문제가 계속되면 ⚙️ 설정 > 앱 로그를 확인해 주세요.`;
+  return `[${langName}] 자막 등록 실패 (${err?.message || '알 수 없는 오류'}) — 문제가 계속되면 설정 화면의 📝 문의하기로 알려주세요.`;
 }
 
 function broadcast(message, tabId = state.tabId) {
@@ -277,6 +278,7 @@ async function runTranslationCredits(tabId, settings) {
   };
 
   let jobId = null;
+  let vId = null, vTitle = null; // 실패 broadcast에서도 영상 식별용 (catch 스코프 공유)
 
   try {
     // 1. 잔액 조회 (실제 검증은 신규 번역이 필요한 경우에만)
@@ -286,6 +288,8 @@ async function runTranslationCredits(tabId, settings) {
     // 2. YouTube 인증 + 자막 가져오기
     const { videoId, videoSnippet, subtitles: sourceSubtitles, trackInfo, existingCaptions } =
       await prepareSubtitles(tabId, settings);
+    vId = videoId;
+    vTitle = videoSnippet?.title || videoId;
 
     const sourceLangName = getLangName(trackInfo.language);
     const trackKindLabel = trackInfo.isASR ? '(자동생성)' : '(수동업로드)';
@@ -313,7 +317,7 @@ async function runTranslationCredits(tabId, settings) {
     if (targetLangs.length === 0 && !(settings.translateTitle || settings.translateDescription)) {
       const savedTabId = state.tabId;
       resetState();
-      broadcast({ type: MSG.TRANSLATION_COMPLETE, successCount: 0, failCount: 0, errors: [], allSkipped: true }, savedTabId);
+      broadcast({ type: MSG.TRANSLATION_COMPLETE, successCount: 0, failCount: 0, errors: [], allSkipped: true, videoId, videoTitle: videoSnippet?.title || videoId }, savedTabId);
       return;
     }
 
@@ -323,7 +327,7 @@ async function runTranslationCredits(tabId, settings) {
     const cachedLangs   = cached ? targetLangs.filter(c => cached.langResults?.[c]?.length === sourceSubtitles.length) : [];
     let remainingLangs = targetLangs.filter(c => !cachedLangs.includes(c));
 
-    // 3-2. 시작 전 비용 추정 — 잔액으로 감당 가능한 언어 수만 번역
+    // 3-2. 시작 전 비용 추정 — 잔액으로 감당 가능한 언어 수만 번역 + 예상 차감액 안내
     if (remainingLangs.length > 0 && pricing) {
       const totalChars   = sourceSubtitles.reduce((s, x) => s + (x.text?.length || 0), 0);
       const estTokens    = Math.ceil(totalChars * 1.2); // 보수적 토큰 추정 (한국어 1자 ≈ 1토큰 + 여유분)
@@ -345,6 +349,24 @@ async function runTranslationCredits(tabId, settings) {
           current: 0, total: targetLangs.length,
         });
       }
+
+      // 시작 전 예상 차감액 안내 (선불 차감형 서비스 — 사용자가 금액을 알고 시작하도록)
+      const estTotal = estCostPerLang * remainingLangs.length;
+      broadcast({
+        type: MSG.TRANSLATION_PROGRESS,
+        langName: `💳 예상 차감 약 $${estTotal.toFixed(2)} (${remainingLangs.length}개 언어) · 실제 사용량 기준 정산`,
+        current: 0, total: targetLangs.length,
+      });
+    }
+
+    // 언어 칩 초기화용 — 번역 대상 언어 목록을 사이드바에 전달 (pending 칩 표시)
+    if (remainingLangs.length > 0 || cachedLangs.length > 0) {
+      broadcast({
+        type: MSG.TRANSLATION_PROGRESS,
+        langName: '번역을 시작합니다...',
+        current: 0, total: targetLangs.length,
+        targetLangs: [...remainingLangs, ...cachedLangs],
+      });
     }
 
     if (cachedLangs.length > 0) {
@@ -445,8 +467,9 @@ async function runTranslationCredits(tabId, settings) {
           chunksCompleted++;
           broadcast({
             type: MSG.TRANSLATION_PROGRESS,
-            langName: `번역 중... (${chunksCompleted}/${totalChunks} 청크)`,
+            langName: `번역 중... (${chunksCompleted}/${totalChunks})`,
             current: chunksCompleted, total: totalChunks,
+            isChunkUpdate: true, // 청크마다 로그 카드로 쌓이지 않도록 (라벨/진행바만 갱신)
           });
         }
       }
@@ -533,9 +556,11 @@ async function runTranslationCredits(tabId, settings) {
     }
 
     // 7. job 완료 처리 → 크레딧 차감 (신규 번역이 있었을 때만)
+    // 자막 업로드는 이미 끝났으므로, PATCH 실패가 "전체 실패"로 오보고되지 않도록 catch로 격리
     if (jobId) {
       const finalStatus = state.shouldStop ? 'stopped' : 'completed';
-      await updateTranslationJob(jobId, { status: finalStatus });
+      await updateTranslationJob(jobId, { status: finalStatus })
+        .catch(e => log(`job 완료 처리 실패 (업로드는 완료됨): ${e.message}`, LOG_LEVEL.WARN));
     }
 
     // 8. 잔여 크레딧 조회 (실패 시 null — 이력에 금액을 오표기하지 않기 위해)
@@ -594,7 +619,7 @@ async function runTranslationCredits(tabId, settings) {
 
     const savedTabId = state.tabId;
     resetState();
-    broadcast({ type: MSG.TRANSLATION_ERROR, error: friendlyError(err) }, savedTabId);
+    broadcast({ type: MSG.TRANSLATION_ERROR, error: friendlyError(err), videoId: vId, videoTitle: vTitle }, savedTabId);
   } finally {
     if (state.isRunning) resetState();
   }
