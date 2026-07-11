@@ -97,7 +97,7 @@ app.post('/portone', async (c) => {
     `💰 금액: ${amountDisplay} → *$${amountUsd.toFixed(2)}* 크레딧\n` +
     `🪪 user\\_id: \`${payment.user_id}\`\n` +
     `🕐 ${time}`
-  ).catch(() => {}); // 알림 실패가 결제 응답에 영향주면 안 됨
+  ).catch(err => console.error('[webhook] 텔레그램 알림 실패:', err.message)); // 알림 실패가 결제 응답에 영향주면 안 됨
 
   return c.json({ ok: true });
 });
