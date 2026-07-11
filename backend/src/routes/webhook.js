@@ -20,8 +20,60 @@ app.post('/portone', async (c) => {
   const body = await c.req.json();
   const { imp_uid, merchant_uid, status } = body;
 
+  // ── 결제 취소 → 크레딧 자동 회수 ─────────────────────
+  if (status === 'cancelled') {
+    const token = await getPortoneToken(c.env);
+    if (!token) {
+      console.error('[webhook] Portone 토큰 발급 실패 (취소 처리)');
+      return c.json({ error: 'PORTONE_AUTH_FAILED' }, 502);
+    }
+    const vr = await fetch(`https://api.iamport.kr/payments/${imp_uid}`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    if (!vr.ok) {
+      console.error(`[webhook] Portone 취소 조회 실패: ${vr.status}`);
+      return c.json({ error: 'PORTONE_VERIFY_FAILED' }, 502);
+    }
+    const vd = await vr.json();
+    if (vd.response?.status !== 'cancelled') {
+      return c.json({ error: 'CANCEL_MISMATCH' }, 400);
+    }
+
+    const sb = getSupabase(c.env);
+    const { data: payment } = await sb
+      .from('payments')
+      .select('*')
+      .eq('portone_id', merchant_uid)
+      .eq('status', 'completed')
+      .single();
+
+    if (!payment) return c.json({ ok: true }); // 미지급 결제 or 이미 환불 처리됨
+
+    const reclaimUsd = payment.credits_granted || payment.amount_usd || 0;
+    const { error: refundError } = await sb.rpc('refund_credits', {
+      p_user_id:    payment.user_id,
+      p_payment_id: payment.id,
+      p_amount_usd: reclaimUsd
+    });
+
+    if (refundError) {
+      console.error('[webhook] refund_credits 실패:', refundError.message, { payment_id: payment.id });
+      return c.json({ error: 'REFUND_FAILED' }, 500); // Portone 재전송으로 재시도
+    }
+
+    const time = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
+    await sendTelegram(c.env, c.env.TELEGRAM_PAYMENT_THREAD_ID,
+      `💸 *[YTAT] 결제 취소*\n\n` +
+      `💰 환불: *$${reclaimUsd.toFixed(2)}* 크레딧 회수\n` +
+      `🪪 user\\_id: \`${payment.user_id}\`\n` +
+      `🕐 ${time}`
+    ).catch(err => console.error('[webhook] 텔레그램 알림 실패:', err.message));
+
+    return c.json({ ok: true });
+  }
+
   if (status !== 'paid') {
-    return c.json({ ok: true }); // 실패/취소는 무시
+    return c.json({ ok: true }); // 실패는 무시
   }
 
   // Portone API로 결제 검증 (위조 방지)
