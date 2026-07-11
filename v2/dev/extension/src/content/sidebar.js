@@ -346,6 +346,13 @@ export async function mount() {
       if (!chrome.runtime?.id) return;
       if (document.visibilityState === 'visible' && !isRunning) loadCreditBalance();
     });
+
+    // 설정(언어·번역 대상 등) 변경을 실시간 반영 — 옵션 페이지에서 저장 시 즉시 갱신
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area === 'local' && changes.settings && !isRunning) {
+        settings = { ...settings, ...changes.settings.newValue };
+      }
+    });
   }
 }
 
