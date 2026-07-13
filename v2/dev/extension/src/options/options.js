@@ -45,7 +45,7 @@ async function fetchCreditBalance() {
     });
     if (!res.ok) throw new Error('fetch');
     const { balance } = await res.json();
-    creditBalance.textContent = `$${(Math.floor(balance * 100) / 100).toFixed(2)}`;
+    creditBalance.textContent = `${Math.round(balance || 0).toLocaleString('ko-KR')} 크레딧`;
   } catch {
     creditBalance.textContent = '조회 실패 (로그인 필요)';
   }

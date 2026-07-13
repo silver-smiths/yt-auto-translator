@@ -527,11 +527,11 @@ function updateModeStrip() {
   const btnTrans = shadow.getElementById('btn-translate');
 
   const balance = creditBalance ?? 0;
-  const isLow = balance < 0.5;
+  const isLow = balance < 500; // 긴 영상 1언어(약 500 크레딧)도 애매한 수준이면 충전 유도
 
   strip.className = `s-mode-strip credits${isLow ? ' low' : ''}`;
   label.textContent = isLow ? '크레딧 부족' : '크레딧';
-  value.textContent = creditBalance != null ? `$${(Math.floor(balance * 100) / 100).toFixed(2)}` : '로딩 중...';
+  value.textContent = creditBalance != null ? formatCredits(balance) : '로딩 중...';
   btnTopup.style.display = 'block';
   // 버튼은 잠그지 않음 — 저장된 번역 재업로드는 크레딧 없이 가능하고,
   // 실제 부족 여부는 시작 시 SW가 판단해 상황별 안내를 표시함
@@ -716,6 +716,11 @@ function escapeHtml(s) {
     ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 }
 
+// 원화 크레딧 표기 (정수, 천단위 콤마)
+function formatCredits(n) {
+  return `${Math.round(n || 0).toLocaleString('ko-KR')} 크레딧`;
+}
+
 async function saveHistoryRecord(record) {
   try {
     const r = await chrome.storage.local.get('ytatHistory');
@@ -787,7 +792,7 @@ function buildHistoryCard(rec) {
   }
 
   const creditLine = (rec.creditsUsed != null)
-    ? `<div class="hist-credit">💰 $${rec.creditsUsed.toFixed(2)} 차감${rec.creditsRemaining != null ? ` · 잔액 $${(Math.floor(rec.creditsRemaining * 100) / 100).toFixed(2)}` : ''}</div>`
+    ? `<div class="hist-credit">💰 ${formatCredits(rec.creditsUsed)} 차감${rec.creditsRemaining != null ? ` · 잔액 ${formatCredits(rec.creditsRemaining)}` : ''}</div>`
     : '';
 
   const fullTitle = rec.videoTitle || rec.videoId || '영상';

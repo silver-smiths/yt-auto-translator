@@ -351,10 +351,10 @@ async function runTranslationCredits(tabId, settings) {
       }
 
       // 시작 전 예상 차감액 안내 (선불 차감형 서비스 — 사용자가 금액을 알고 시작하도록)
-      const estTotal = estCostPerLang * remainingLangs.length;
+      const estTotal = Math.round(estCostPerLang * remainingLangs.length);
       broadcast({
         type: MSG.TRANSLATION_PROGRESS,
-        langName: `💳 예상 차감 약 $${estTotal.toFixed(2)} (${remainingLangs.length}개 언어) · 실제 사용량 기준 정산`,
+        langName: `💳 예상 차감 약 ${estTotal.toLocaleString('ko-KR')} 크레딧 (${remainingLangs.length}개 언어) · 실제 사용량 기준 정산`,
         current: 0, total: targetLangs.length,
       });
     }
