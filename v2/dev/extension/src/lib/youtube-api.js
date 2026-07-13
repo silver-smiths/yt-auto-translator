@@ -328,6 +328,16 @@ async function _updateCaption(captionId, langCode, srtContent) {
 // =============================================
 
 /**
+ * 영상의 기존 localizations 조회 (이미 번역된 언어 판별용)
+ * @returns {Object} { 'en': { title, description }, ... } (없으면 {})
+ */
+export async function getVideoLocalizations(videoId) {
+  const res = await apiFetch(`${YT_API_BASE}/videos?part=localizations&id=${videoId}`);
+  const data = await res.json();
+  return data.items?.[0]?.localizations || {};
+}
+
+/**
  * 영상의 YouTube localizations 업데이트 (기존 값에 병합)
  * localizations: { 'en': { title: '...', description: '...' }, 'ja': { ... } }
  */

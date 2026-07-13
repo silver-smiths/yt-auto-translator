@@ -708,8 +708,7 @@ function updateProgress(pct, current, total) {
   if (pct >= 100 && spinner) spinner.style.display = 'none';
 }
 
-// ── 처리 이력 (구조화, 최대 100건, 사용자가 지우기 전까지 유지) ───────────────
-const MAX_HISTORY = 100;
+// ── 처리 이력 (구조화, 최대 100건은 SW에서 관리, 사용자가 지우기 전까지 유지) ──
 
 function escapeHtml(s) {
   return String(s ?? '').replace(/[&<>"']/g, ch =>
@@ -721,13 +720,7 @@ function formatCredits(n) {
   return `${Math.round(n || 0).toLocaleString('ko-KR')} 크레딧`;
 }
 
-async function saveHistoryRecord(record) {
-  try {
-    const r = await chrome.storage.local.get('ytatHistory');
-    const list = [record, ...(r.ytatHistory || [])].slice(0, MAX_HISTORY);
-    await chrome.storage.local.set({ ytatHistory: list });
-  } catch {}
-}
+// (이력 저장은 서비스워커가 담당 — 탭이 닫혀도 유지되도록. 사이드바는 로드/표시만.)
 
 async function clearHistory() {
   try {
@@ -927,27 +920,10 @@ function setupMessageListener() {
         Object.keys(langChipState).forEach(code => { langChipState[code] = 'done'; });
         renderChips();
         setRunning(false);
+        clearTransientLogs(); // 실시간 진행 로그 제거 → 이력 카드로 대체
 
-        // 실시간 진행 로그 제거 → 구조화 이력 카드로 대체
-        clearTransientLogs();
-
-        const record = {
-          ts:               new Date().toISOString(),
-          videoId:          msg.videoId,
-          videoTitle:       msg.videoTitle,
-          items:            msg.items || [],
-          skippedLangs:     msg.skippedLangs || [],
-          metaTitle:        !!msg.metaTitle,
-          metaDesc:         !!msg.metaDesc,
-          successCount:     msg.successCount ?? 0,
-          failCount:        msg.errors?.length ?? 0,
-          creditsUsed:      msg.creditsUsed,
-          creditsRemaining: msg.creditsRemaining,
-          stopped:          !!msg.stopped,
-          allSkipped:       !!msg.allSkipped,
-        };
-        prependHistory(record);
-        saveHistoryRecord(record);
+        // 이력 저장은 SW가 담당(탭 닫혀도 유지). 여기선 화면 표시만.
+        if (msg.record) prependHistory(msg.record);
         loadCreditBalance();
         break;
       }
@@ -955,26 +931,16 @@ function setupMessageListener() {
       case MSG.TRANSLATION_ERROR: {
         const errText = msg.error || msg.message || '번역 중 오류가 발생했습니다.';
 
-        // 개별 언어 실패(perLang): 작업은 계속 진행 중 — 종료/이력저장 하지 않고 진행 로그만 추가
+        // 개별 언어 실패(perLang): 작업은 계속 진행 중 — 종료/이력저장 하지 않고 진행 로그만
         if (msg.perLang) {
           addLog('error', 'ERROR', `❌ ${errText}`);
           break;
         }
 
-        // 작업 전체 실패(예외): 종료 + 이력 저장
+        // 작업 전체 실패: 종료 + 이력 카드 표시(저장은 SW)
         setRunning(false);
         clearTransientLogs();
-        const record = {
-          ts:         new Date().toISOString(),
-          videoId:    msg.videoId,
-          videoTitle: msg.videoTitle,
-          items:      [],
-          successCount: 0,
-          failCount:  1,
-          errorText:  errText,
-        };
-        prependHistory(record);
-        saveHistoryRecord(record);
+        if (msg.record) prependHistory(msg.record);
         if (errText.includes('크레딧')) {
           updateModeStrip();
         }

@@ -10,6 +10,7 @@ import {
   uploadCaption,
   subtitlesToSRT,
   updateVideoLocalizations,
+  getVideoLocalizations,
 } from '../lib/youtube-api.js';
 import {
   fetchCredits,
@@ -128,6 +129,20 @@ function broadcast(message, tabId = state.tabId) {
   if (tabId) chrome.tabs.sendMessage(tabId, message).catch(() => {});
 }
 
+// 처리 이력을 SW가 직접 storage에 저장 (사이드바 탭이 닫혀도 기록 유지, 최대 100건).
+// 완료/실패 시 record를 만들어 저장 + broadcast에 함께 실어 사이드바 화면도 갱신.
+const MAX_HISTORY = 100;
+async function saveHistoryToStorage(record) {
+  try {
+    const r = await chrome.storage.local.get('ytatHistory');
+    const list = [record, ...(r.ytatHistory || [])].slice(0, MAX_HISTORY);
+    await chrome.storage.local.set({ ytatHistory: list });
+  } catch (e) {
+    log(`이력 저장 실패: ${e.message}`, LOG_LEVEL.WARN);
+  }
+}
+function nowISO() { return new Date().toISOString(); }
+
 // ── 상태 ──────────────────────────────────────────────────────────────────────
 
 let state = {
@@ -148,7 +163,7 @@ function resetState() {
 
 // ── 공통: YouTube 자막 준비 ────────────────────────────────────────────────────
 
-async function prepareSubtitles(tabId, settings) {
+async function prepareSubtitles(tabId, settings, needSubtitles = true) {
   const tab = await chrome.tabs.get(tabId);
   const videoId = extractVideoId(tab.url);
   if (!videoId) throw new Error('YouTube 영상 ID를 찾을 수 없습니다.');
@@ -159,9 +174,21 @@ async function prepareSubtitles(tabId, settings) {
   broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: '영상 정보 조회 중...', current: 0, total: state.progress.total });
   const videoSnippet = await getVideoDetails(videoId);
 
-  broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: '원본 자막 불러오는 중...', current: 0, total: state.progress.total });
+  broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: '원본 자막 확인 중...', current: 0, total: state.progress.total });
   const existingCaptions = await listCaptions(videoId);
 
+  // 자막 번역이 필요 없으면(제목/설명만) 자막 다운로드(200 units)를 건너뛰어 API 절약.
+  // 원본 언어는 영상 메타데이터로 대체.
+  if (!needSubtitles) {
+    const lang = videoSnippet?.defaultLanguage || videoSnippet?.defaultAudioLanguage || settings.sourceLang || 'auto';
+    return {
+      videoId, videoSnippet, existingCaptions,
+      subtitles: [],
+      trackInfo: { language: lang, trackKind: 'none', isASR: false },
+    };
+  }
+
+  broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: '원본 자막 불러오는 중...', current: 0, total: state.progress.total });
   const { subtitles, trackInfo } = await fetchSourceSubtitles(
     existingCaptions,
     settings.sourceLang,
@@ -209,6 +236,26 @@ async function translateAndUploadMetadataCredits(videoId, snippet, targetLangs, 
   if (settings.translateTitle       && snippet?.title)       items.push({ text: snippet.title });
   if (settings.translateDescription && snippet?.description) items.push({ text: snippet.description.slice(0, 3000) });
   if (!items.length || !targetLangs.length) return;
+
+  // 이미 제목/설명이 등록된 언어는 건너뜀 (반복 실행 시 재번역·재과금 방지)
+  let metaTargets = targetLangs;
+  try {
+    const existing = await getVideoLocalizations(videoId);
+    metaTargets = targetLangs.filter(code => {
+      const lang = TARGET_LANGUAGES.find(l => l.code === code);
+      const ytCode = lang?.ytCode || code;
+      const loc = existing[ytCode];
+      if (!loc) return true; // 등록 이력 없음 → 번역
+      // 요청한 필드가 이미 다 있으면 스킵
+      const titleDone = !settings.translateTitle       || !!loc.title;
+      const descDone  = !settings.translateDescription || !!loc.description;
+      return !(titleDone && descDone);
+    });
+  } catch (e) {
+    log(`기존 localization 조회 실패(전체 번역 진행): ${e.message}`, LOG_LEVEL.WARN);
+  }
+  if (!metaTargets.length) return; // 전부 이미 등록됨
+  targetLangs = metaTargets;
 
   broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: '제목/설명 번역 중...', current: 0, total: 1 });
 
@@ -285,9 +332,10 @@ async function runTranslationCredits(tabId, settings) {
     broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: '크레딧 잔액 확인 중...', current: 0, total: state.progress.total });
     const { balance, pricing } = await fetchCredits();
 
-    // 2. YouTube 인증 + 자막 가져오기
+    // 2. YouTube 인증 + 자막 가져오기 (자막 OFF면 다운로드 스킵 → API 절약)
+    const needSubtitles = settings.translateSubtitles !== false;
     const { videoId, videoSnippet, subtitles: sourceSubtitles, trackInfo, existingCaptions } =
-      await prepareSubtitles(tabId, settings);
+      await prepareSubtitles(tabId, settings, needSubtitles);
     vId = videoId;
     vTitle = videoSnippet?.title || videoId;
 
@@ -317,7 +365,12 @@ async function runTranslationCredits(tabId, settings) {
     if (targetLangs.length === 0 && !(settings.translateTitle || settings.translateDescription)) {
       const savedTabId = state.tabId;
       resetState();
-      broadcast({ type: MSG.TRANSLATION_COMPLETE, successCount: 0, failCount: 0, errors: [], allSkipped: true, videoId, videoTitle: videoSnippet?.title || videoId }, savedTabId);
+      const record = {
+        ts: nowISO(), videoId, videoTitle: videoSnippet?.title || videoId,
+        items: [], successCount: 0, failCount: 0, allSkipped: true,
+      };
+      await saveHistoryToStorage(record);
+      broadcast({ type: MSG.TRANSLATION_COMPLETE, record }, savedTabId);
       return;
     }
 
@@ -592,21 +645,21 @@ async function runTranslationCredits(tabId, settings) {
     const savedTabId   = state.tabId;
     const wasStopped   = state.shouldStop;
     resetState();
-    broadcast({
-      type: MSG.TRANSLATION_COMPLETE,
-      successCount: successCount,
-      errors,
-      creditsRemaining,
-      // 구조화 이력 데이터
+
+    const record = {
+      ts:           nowISO(),
       videoId,
-      videoTitle:  videoSnippet?.title || videoId,
-      items:       historyItems,
-      skippedLangs: alreadyTranslated || [], // 이미 자막이 있어 건너뛴 언어명
-      metaTitle:   metaDone && settings.translateTitle,
-      metaDesc:    metaDone && settings.translateDescription,
-      creditsUsed,
-      stopped:     wasStopped,
-    }, savedTabId);
+      videoTitle:   videoSnippet?.title || videoId,
+      items:        historyItems,
+      skippedLangs: alreadyTranslated || [],
+      metaTitle:    metaDone && settings.translateTitle,
+      metaDesc:     metaDone && settings.translateDescription,
+      successCount, failCount: errors.length,
+      creditsUsed, creditsRemaining,
+      stopped:      wasStopped,
+    };
+    await saveHistoryToStorage(record);
+    broadcast({ type: MSG.TRANSLATION_COMPLETE, record, creditsRemaining }, savedTabId);
 
   } catch (err) {
     log(err.message, LOG_LEVEL.ERROR, { action: 'runTranslationCredits' });
@@ -619,7 +672,13 @@ async function runTranslationCredits(tabId, settings) {
 
     const savedTabId = state.tabId;
     resetState();
-    broadcast({ type: MSG.TRANSLATION_ERROR, error: friendlyError(err), videoId: vId, videoTitle: vTitle }, savedTabId);
+    const errText = friendlyError(err);
+    const record = {
+      ts: nowISO(), videoId: vId, videoTitle: vTitle,
+      items: [], successCount: 0, failCount: 1, errorText: errText,
+    };
+    await saveHistoryToStorage(record);
+    broadcast({ type: MSG.TRANSLATION_ERROR, error: errText, record }, savedTabId);
   } finally {
     if (state.isRunning) resetState();
   }
