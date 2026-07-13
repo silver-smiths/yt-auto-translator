@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { getSupabase } from '../lib/supabase.js';
-import { KRW_TO_USD_RATE, INPUT_PER_M, OUTPUT_PER_M, CREDIT_MULTIPLIER } from '../lib/constants.js';
+import { KRW_TO_USD_RATE, INPUT_PER_M, OUTPUT_PER_M, CREDIT_PER_USD } from '../lib/constants.js';
 
 const app = new Hono();
 
@@ -20,11 +20,11 @@ app.get('/', async (c) => {
   return c.json({
     balance:         parseFloat(data.balance),
     cumulative_used: parseFloat(data.cumulative_used),
-    // 익스텐션의 시작 전 비용 추정용 단가 (하드코딩 중복 방지)
+    // 익스텐션의 시작 전 비용 추정용 단가 (apiCostUsd × multiplier = 크레딧(원))
     pricing: {
       input_per_m:  INPUT_PER_M,
       output_per_m: OUTPUT_PER_M,
-      multiplier:   CREDIT_MULTIPLIER,
+      multiplier:   CREDIT_PER_USD, // 배수×환율 → 예상 차감 크레딧(원)
     },
   });
 });

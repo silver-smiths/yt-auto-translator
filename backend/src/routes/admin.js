@@ -1,13 +1,14 @@
 import { Hono } from 'hono';
 import { getSupabase } from '../lib/supabase.js';
-import { INPUT_PER_M, OUTPUT_PER_M, CREDIT_MULTIPLIER } from '../lib/constants.js';
+import { INPUT_PER_M, OUTPUT_PER_M, CREDIT_PER_USD } from '../lib/constants.js';
 
 const router = new Hono();
 
+// 매출(청구액)을 원화 크레딧 단위로 반환
 function calcRevenue(inputTokens, outputTokens) {
   return Math.round(
-    (inputTokens * INPUT_PER_M + outputTokens * OUTPUT_PER_M) / 1_000_000 * CREDIT_MULTIPLIER * 10000
-  ) / 10000;
+    (inputTokens * INPUT_PER_M + outputTokens * OUTPUT_PER_M) / 1_000_000 * CREDIT_PER_USD
+  );
 }
 
 // 관리자 여부 확인

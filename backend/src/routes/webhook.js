@@ -49,11 +49,12 @@ app.post('/portone', async (c) => {
 
     if (!payment) return c.json({ ok: true }); // 미지급 결제 or 이미 환불 처리됨
 
-    const reclaimUsd = payment.credits_granted || payment.amount_usd || 0;
+    // 지급했던 크레딧(원화)을 회수. credits_granted가 지급 크레딧 값
+    const reclaimCredits = Math.round(payment.credits_granted || 0);
     const { error: refundError } = await sb.rpc('refund_credits', {
       p_user_id:    payment.user_id,
       p_payment_id: payment.id,
-      p_amount_usd: reclaimUsd
+      p_amount_usd: reclaimCredits   // 인자명은 레거시(usd)지만 값은 원화 크레딧
     });
 
     if (refundError) {
@@ -64,7 +65,7 @@ app.post('/portone', async (c) => {
     const time = new Date().toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' });
     await sendTelegram(c.env, c.env.TELEGRAM_PAYMENT_THREAD_ID,
       `💸 *[YTAT] 결제 취소*\n\n` +
-      `💰 환불: *$${reclaimUsd.toFixed(2)}* 크레딧 회수\n` +
+      `💰 환불: *${reclaimCredits.toLocaleString('ko-KR')} 크레딧* 회수\n` +
       `🪪 user\\_id: \`${payment.user_id}\`\n` +
       `🕐 ${time}`
     ).catch(err => console.error('[webhook] 텔레그램 알림 실패:', err.message));
@@ -114,8 +115,9 @@ app.post('/portone', async (c) => {
     return c.json({ error: 'AMOUNT_MISMATCH' }, 400);
   }
 
-  const amountUsd = payment.amount_usd ?? (
-    payment.currency === 'USD' ? payment.amount_paid : payment.amount_paid / KRW_TO_USD_RATE
+  // 지급 크레딧(원화 1:1) — KRW 결제는 그대로, USD 결제는 환율로 환산
+  const amountCredits = Math.round(
+    payment.currency === 'USD' ? payment.amount_paid * KRW_TO_USD_RATE : payment.amount_paid
   );
 
   // 크레딧 지급 (원자적 처리 — RPC가 payments status도 pending → completed로 갱신)
@@ -123,7 +125,7 @@ app.post('/portone', async (c) => {
   const { error: grantError } = await sb.rpc('grant_credits', {
     p_user_id:    payment.user_id,
     p_payment_id: payment.id,
-    p_amount_usd: amountUsd
+    p_amount_usd: amountCredits   // RPC 인자명은 레거시(usd)지만 값은 원화 크레딧
   });
 
   if (grantError) {
@@ -135,7 +137,7 @@ app.post('/portone', async (c) => {
   // 지급 성공 후 부가 필드 기록
   await sb
     .from('payments')
-    .update({ credits_granted: amountUsd, updated_at: new Date().toISOString() })
+    .update({ credits_granted: amountCredits, updated_at: new Date().toISOString() })
     .eq('id', payment.id);
 
   // 텔레그램 결제 알림 🎉
@@ -146,7 +148,7 @@ app.post('/portone', async (c) => {
 
   await sendTelegram(c.env, c.env.TELEGRAM_PAYMENT_THREAD_ID,
     `🎉 *[YTAT] 결제 완료!*\n\n` +
-    `💰 금액: ${amountDisplay} → *$${amountUsd.toFixed(2)}* 크레딧\n` +
+    `💰 금액: ${amountDisplay} → *${amountCredits.toLocaleString('ko-KR')} 크레딧*\n` +
     `🪪 user\\_id: \`${payment.user_id}\`\n` +
     `🕐 ${time}`
   ).catch(err => console.error('[webhook] 텔레그램 알림 실패:', err.message)); // 알림 실패가 결제 응답에 영향주면 안 됨

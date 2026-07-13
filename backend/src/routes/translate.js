@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { getSupabase } from '../lib/supabase.js';
-import { INPUT_PER_M, OUTPUT_PER_M, CREDIT_MULTIPLIER, MAX_SUBTITLES, MAX_TARGET_LANGS, OVERDRAFT_USD } from '../lib/constants.js';
+import { INPUT_PER_M, OUTPUT_PER_M, CREDIT_PER_USD, MAX_SUBTITLES, MAX_TARGET_LANGS, OVERDRAFT_CREDITS } from '../lib/constants.js';
 
 const app = new Hono();
 
@@ -232,14 +232,14 @@ app.post('/chunk', async (c) => {
   }
 
   // 잔액 사전 확인 — 이 job에 누적된 미차감 요금까지 반영.
-  // 시작된 작업이 잔액 소진 직후 끊기지 않도록 OVERDRAFT_USD만큼 초과 허용 (초과분은 마이너스 잔액으로 차감됨)
+  // 시작된 작업이 잔액 소진 직후 끊기지 않도록 OVERDRAFT_CREDITS만큼 초과 허용 (초과분은 마이너스 잔액으로 차감됨)
   const { data: account } = await sb
     .from('credit_accounts')
     .select('balance')
     .eq('user_id', userId)
     .single();
 
-  if (!account || account.balance + OVERDRAFT_USD <= (job.credits_charged || 0)) {
+  if (!account || account.balance + OVERDRAFT_CREDITS <= (job.credits_charged || 0)) {
     return c.json({ error: 'INSUFFICIENT_CREDITS' }, 402);
   }
 
@@ -256,8 +256,8 @@ app.post('/chunk', async (c) => {
       p_job_id:        job_id,
       p_input_tokens:  inputTokens,
       p_output_tokens: outputTokens,
-      p_api_cost:      apiCostUsd,
-      p_credits:       apiCostUsd * CREDIT_MULTIPLIER,
+      p_api_cost:      apiCostUsd,                 // 실비(USD) — cumulative_used·통계용
+      p_credits:       apiCostUsd * CREDIT_PER_USD, // 청구 크레딧(원)
     });
     if (incError) console.error('[chunk] increment_job_tokens 실패:', incError.message, { job_id });
   }
@@ -350,7 +350,7 @@ app.patch('/job/:id', async (c) => {
       p_user_id:    userId,
       p_job_id:     jobId,
       p_api_cost:   job.api_cost_usd,
-      p_multiplier: CREDIT_MULTIPLIER,
+      p_multiplier: CREDIT_PER_USD, // apiCostUsd × (배수×환율) = 차감 크레딧(원)
     });
     if (deductError) {
       console.error('[PATCH] deduct_credits 실패:', deductError.message, { jobId, userId });
