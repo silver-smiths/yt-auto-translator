@@ -1,4 +1,4 @@
-import { MSG, PAYMENT_URL, API_BASE, TARGET_LANGUAGES } from '../lib/constants.js';
+import { MSG, PAYMENT_URL, TARGET_LANGUAGES } from '../lib/constants.js';
 import { loadSettings } from '../lib/storage.js';
 
 // ── 인라인 CSS (Shadow DOM 내부) ──────────────────────────────────────────────
@@ -164,8 +164,63 @@ const CSS = `
 .chip.active  { background: rgba(187,134,252,0.2); color: #BB86FC; }
 .chip.done    { background: rgba(3,218,198,0.15); color: #03DAC6; }
 
-/* ── 로그 피드 ── */
-.s-logs { flex: 1; padding: 10px; display: flex; flex-direction: column; gap: 7px; overflow-y: auto; }
+/* ── 상하 분할 섹션 (공지 / 처리 기록 — 각 영역 독립 스크롤) ── */
+.s-section { display: flex; flex-direction: column; min-height: 0; }
+.s-notice-section { flex: 0 1 auto; max-height: 42%; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.s-hist-section   { flex: 1 1 auto; }
+.s-section-head {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 9px 12px 6px; flex-shrink: 0;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.3px;
+  color: rgba(255,255,255,0.5);
+}
+.s-section-badge {
+  font-size: 10px; font-weight: 700; color: #fff;
+  background: #CF6679; border-radius: 99px; padding: 1px 8px;
+}
+.s-section-btn {
+  font-size: 10px; color: rgba(255,255,255,0.4);
+  background: none; border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 5px; padding: 3px 9px; cursor: pointer;
+}
+.s-section-btn:hover { color: rgba(255,255,255,0.7); border-color: rgba(255,255,255,0.2); }
+.s-section-body {
+  flex: 1; min-height: 0; overflow-y: auto;
+  padding: 2px 10px 10px; display: flex; flex-direction: column; gap: 7px;
+}
+
+/* ── 공지 카드 (목록형, 클릭 시 본문 펼침) ── */
+.notice-card {
+  border-radius: 8px; padding: 9px 11px; flex-shrink: 0;
+  border: 1px solid; background: rgba(255,255,255,0.04);
+}
+.notice-card.info     { border-color: rgba(187,134,252,0.55); background: rgba(187,134,252,0.10); }
+.notice-card.warn     { border-color: rgba(255,183,77,0.6);   background: rgba(255,183,77,0.12); }
+.notice-card.critical { border-color: rgba(207,102,121,0.7);  background: rgba(207,102,121,0.15); }
+.notice-card.read     { background: rgba(255,255,255,0.03); border-color: rgba(255,255,255,0.12); }
+.notice-card.read .notice-badge { opacity: 0.65; }
+.notice-card.read .notice-title { color: rgba(255,255,255,0.55); }
+.notice-top { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-bottom: 4px; }
+.notice-badge {
+  font-size: 10px; font-weight: 700; letter-spacing: 0.3px;
+  padding: 1px 7px; border-radius: 99px;
+}
+.notice-card.info     .notice-badge { background: rgba(187,134,252,0.25); color: #d3b6ff; }
+.notice-card.warn     .notice-badge { background: rgba(255,183,77,0.25);  color: #ffcb70; }
+.notice-card.critical .notice-badge { background: rgba(207,102,121,0.3);  color: #ff9aab; }
+.notice-date { font-size: 10px; color: rgba(255,255,255,0.45); flex-shrink: 0; }
+.notice-title {
+  font-size: 12.5px; font-weight: 700; color: rgba(255,255,255,0.92);
+  line-height: 1.4; cursor: pointer;
+}
+.notice-title::after { content: ' ⌄'; color: rgba(255,255,255,0.35); font-weight: 400; }
+.notice-card.expanded .notice-title::after { content: ' ⌃'; }
+.notice-body {
+  font-size: 11.5px; color: rgba(255,255,255,0.82); line-height: 1.55;
+  white-space: pre-wrap; margin-top: 7px;
+  padding-top: 7px; border-top: 1px solid rgba(255,255,255,0.1);
+}
+.notice-empty { font-size: 12px; color: rgba(255,255,255,0.4); text-align: center; padding: 14px 10px; }
 
 .log-card {
   border-radius: 7px; padding: 8px 10px;
@@ -174,16 +229,12 @@ const CSS = `
 .log-card.info    { background: rgba(255,255,255,0.03); border-color: #BB86FC; }
 .log-card.success { background: rgba(255,255,255,0.03); border-color: #03DAC6; }
 .log-card.error   { background: rgba(255,255,255,0.03); border-color: #CF6679; }
+.log-card.stopped { background: rgba(255,255,255,0.03); border-color: #9E9E9E; }
 .log-card.upsell  { background: rgba(3,218,198,0.07);   border-color: #03DAC6; }
-.log-card.onboard-welcome { background: rgba(187,134,252,0.08); border-color: #BB86FC; }
-.log-card.onboard-credits {
-  background: linear-gradient(135deg, rgba(3,218,198,0.08), rgba(6,95,212,0.10));
-  border-color: #03DAC6;
-}
 
 .log-top  { display: flex; justify-content: space-between; margin-bottom: 3px; }
 .log-type { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; }
-.log-time { font-size: 9px; color: rgba(255,255,255,0.3); }
+.log-time { font-size: 10px; color: rgba(255,255,255,0.5); }
 .log-msg  { font-size: 11px; color: rgba(255,255,255,0.7); line-height: 1.5; }
 .log-cta  { margin-top: 6px; font-size: 11px; color: #03DAC6; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
 .log-dismiss {
@@ -209,18 +260,16 @@ const CSS = `
 .hist-title.expanded::after { content: ' ⌃'; }
 .hist-meta { font-size: 10px; color: rgba(255,255,255,0.55); margin-bottom: 5px; line-height: 1.4; }
 .hist-langs { display: flex; flex-wrap: wrap; gap: 3px; margin-bottom: 5px; }
-.hist-lang { font-size: 9px; padding: 1px 7px; border-radius: 99px; }
+.hist-lang { font-size: 10px; padding: 1px 7px; border-radius: 99px; }
 .hist-lang.ok   { background: rgba(3,218,198,0.15); color: #03DAC6; }
 .hist-lang.fail { background: rgba(207,102,121,0.2); color: #ff8a9b; }
-.hist-credit { font-size: 10px; color: rgba(255,255,255,0.45); }
+.hist-lang.more { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.55); }
+.hist-credit { font-size: 11px; color: rgba(255,255,255,0.6); }
 
-.hist-clear-bar { display: flex; justify-content: flex-end; padding: 2px 0 4px; flex-shrink: 0; }
-.hist-clear-btn {
-  font-size: 10px; color: rgba(255,255,255,0.4);
-  background: none; border: 1px solid rgba(255,255,255,0.1);
-  border-radius: 5px; padding: 3px 9px; cursor: pointer;
+.hist-empty {
+  font-size: 12px; color: rgba(255,255,255,0.4);
+  text-align: center; padding: 20px 10px;
 }
-.hist-clear-btn:hover { color: rgba(255,255,255,0.7); border-color: rgba(255,255,255,0.2); }
 
 .credit-feature-row { display: flex; align-items: flex-start; gap: 6px; margin-top: 5px; }
 .credit-feature-icon { font-size: 11px; flex-shrink: 0; margin-top: 1px; }
@@ -302,6 +351,7 @@ let isCollapsed = false;
 let isRunning = false;
 let settings = null;
 let creditBalance = null;
+let creditAuthNeeded = false; // 미로그인 상태(비대화형 조회 실패) — 모드 스트립에 "로그인 필요" 표시
 let langChipState = {}; // code → 'pending'|'active'|'done'
 let visibilityListenerAttached = false;
 
@@ -325,7 +375,9 @@ export async function mount() {
   renderSidebar();
   loadCreditBalance();
   setupMessageListener();
+  restoreRunningState(); // 이미 진행 중인 번역이 있으면 진행 UI 복원 ("이미 진행 중" 데드엔드 방지)
   loadHistory(); // 저장된 처리 이력 복원 (최대 100건)
+  loadNotices(); // 공지 영역에 공지 목록 표시 (클릭 시 본문 펼침)
 
   // 충전 탭에서 돌아왔을 때 잔액 자동 갱신
   if (!visibilityListenerAttached) {
@@ -379,7 +431,6 @@ function renderSidebar() {
   sidebar.innerHTML = buildSidebarHTML();
   shadow.appendChild(sidebar);
   bindSidebarEvents(sidebar);
-  renderOnboardingCards();
   updateModeStrip();
 }
 
@@ -422,8 +473,21 @@ function buildSidebarHTML() {
 
     <div class="s-chips" id="chips-section" style="display:none"></div>
 
-    <div class="s-logs" id="log-feed"></div>
-    <div class="s-logs" id="onboard-feed" style="padding-top:0"></div>
+    <div class="s-section s-notice-section" id="notice-section" style="display:none">
+      <div class="s-section-head">
+        <span>📢 공지</span>
+        <span class="s-section-badge" id="notice-unread" style="display:none"></span>
+      </div>
+      <div class="s-section-body" id="notice-feed"></div>
+    </div>
+
+    <div class="s-section s-hist-section">
+      <div class="s-section-head">
+        <span>📋 처리 기록</span>
+        <button class="s-section-btn" id="btn-clear-hist" style="display:none">🗑 지우기</button>
+      </div>
+      <div class="s-section-body" id="log-feed"></div>
+    </div>
 
     <div class="s-footer">
       <button class="btn-settings" id="btn-settings">⚙️ 설정</button>
@@ -479,7 +543,15 @@ function bindSidebarEvents(sidebar) {
       btn.innerHTML = '■&nbsp; 중지 중...';
       const label = shadow.getElementById('progress-label');
       if (label) label.textContent = '현재 작업을 마무리한 뒤 중지됩니다...';
-      chrome.runtime.sendMessage({ type: MSG.STOP_TRANSLATION });
+      chrome.runtime.sendMessage({ type: MSG.STOP_TRANSLATION }, () => {
+        // 컨텍스트 무효(확장 리로드 등)로 전송 실패 시 버튼이 '중지 중...'에 고착되지 않도록 원복
+        if (chrome.runtime.lastError) {
+          btn.disabled = false;
+          btn.className = 'btn-stop';
+          btn.innerHTML = '■&nbsp; 번역 중지';
+          addLog('error', 'ERROR', '확장이 업데이트된 것 같습니다. 페이지를 새로고침 후 다시 시도해 주세요.');
+        }
+      });
     } else {
       startTranslation();
     }
@@ -491,6 +563,10 @@ function bindSidebarEvents(sidebar) {
 
   sidebar.querySelector('#btn-settings').addEventListener('click', () => {
     chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS' });
+  });
+
+  sidebar.querySelector('#btn-clear-hist').addEventListener('click', () => {
+    if (confirm('처리 기록을 모두 지울까요? (되돌릴 수 없습니다)')) clearHistory();
   });
 
   sidebar.querySelector('#btn-cip-close').addEventListener('click', () => {
@@ -513,6 +589,16 @@ function updateModeStrip() {
   const balance = creditBalance ?? 0;
   const isLow = balance < 500; // 긴 영상 1언어(약 500 크레딧)도 애매한 수준이면 충전 유도
 
+  // 미로그인: 팝업 없이 안내만 — 실제 로그인은 [번역 시작] 시 진행
+  if (creditAuthNeeded && creditBalance == null) {
+    strip.className = 's-mode-strip credits';
+    label.textContent = '로그인 필요';
+    value.textContent = '번역 시작 시 로그인';
+    btnTopup.style.display = 'none';
+    btnTrans.disabled = false;
+    return;
+  }
+
   strip.className = `s-mode-strip credits${isLow ? ' low' : ''}`;
   label.textContent = isLow ? '크레딧 부족' : '크레딧';
   value.textContent = creditBalance != null ? formatCredits(balance) : '로딩 중...';
@@ -526,83 +612,117 @@ function updateModeStrip() {
 async function loadCreditBalance() {
   let res;
   try {
-    res = await chrome.runtime.sendMessage({ type: 'GET_CREDITS' });
+    // 비대화형 조회 — 로그인 안 된 사용자에게 무단 OAuth 팝업을 띄우지 않음
+    res = await chrome.runtime.sendMessage({ type: 'GET_CREDITS', interactive: false });
   } catch (err) {
     // 컨텍스트 무효화(익스텐션 리로드)는 조용히 무시 — 페이지 새로고침 시 정상화
     if (err?.message?.includes('context invalidated')) return;
     res = { error: err.message };
   }
   if (res?.error) {
-    console.error('[YTAT] 크레딧 조회 실패:', res.error);
-    addLog('error', 'ERROR', `크레딧 조회 실패: ${res.error}`);
+    // 미로그인은 정상 상태로 취급(로그 스팸·원문 코드 노출 방지) — 스트립에 "로그인 필요"만 표시
+    if (res.error.includes('NOT_SIGNED_IN')) {
+      creditAuthNeeded = true;
+    } else {
+      console.error('[YTAT] 크레딧 조회 실패:', res.error);
+      addLog('error', 'ERROR', '크레딧 잔액을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+    }
+  } else {
+    creditAuthNeeded = false;
   }
   creditBalance = res?.balance ?? null;
   updateModeStrip();
 }
 
-// ── 온보딩 카드 ───────────────────────────────────────────────────────────────
-const ONBOARD_CARDS = [
-  {
-    id: 'welcome',
-    cls: 'onboard-welcome',
-    typeColor: '#BB86FC',
-    typeLabel: '📌 공지',
-    msg: '자막 자동 번역&등록기에 오신 걸 환영합니다 🎉',
-  },
-  {
-    id: 'howto',
-    cls: 'info',
-    typeColor: '#BB86FC',
-    typeLabel: '📌 공지',
-    msg: '영상 수정 페이지에서 <strong style="color:rgba(255,255,255,0.9)">▶ 번역 시작</strong> 버튼을 누르면 선택한 언어로 자막이 자동 번역·등록됩니다.',
-  },
-  {
-    id: 'settings',
-    cls: 'info',
-    typeColor: '#BB86FC',
-    typeLabel: '📌 공지',
-    msg: '먼저 <strong style="color:rgba(255,255,255,0.9)">⚙️ 설정</strong>에서 번역 언어를 선택하고 크레딧을 충전하세요.',
-  },
-];
+// ── 공지 (사이드바 상단 영역에 목록 표시, 클릭 시 본문 펼침 / 지난 공지 아카이브는 설정) ──
+const NOTICE_META = {
+  info:     { cls: 'info',     label: '📢 공지' },
+  warn:     { cls: 'warn',     label: '⚠️ 안내' },
+  critical: { cls: 'critical', label: '🚨 중요' },
+};
+let readIdsSet = null;                    // 읽음 ID 메모리 캐시 (쓰기 경합 방지 — 항상 전체 셋 기록)
+const noticeBodyCache = new Map();        // 공지 본문 캐시 (재펼침 시 재조회 방지)
 
-async function renderOnboardingCards() {
-  const result = await new Promise(r => chrome.storage.local.get('dismissedCards', r));
-  const dismissed = new Set(result.dismissedCards || []);
-
-  const feed = shadow.getElementById('onboard-feed');
-  for (const card of ONBOARD_CARDS) {
-    if (dismissed.has(card.id)) continue;
-    feed.appendChild(buildOnboardCard(card));
-  }
+async function loadNotices() {
+  const section = shadow.getElementById('notice-section');
+  const feed = shadow.getElementById('notice-feed');
+  if (!feed) return;
+  try {
+    const { readNoticeIds = [] } = await chrome.storage.local.get('readNoticeIds');
+    readIdsSet = new Set(readNoticeIds.map(String));
+    // 콘텐츠 스크립트는 교차출처 fetch가 CORS로 막히므로 SW를 경유해 조회
+    const res = await chrome.runtime.sendMessage({ type: 'GET_NOTICES' });
+    const notices = res?.notices || [];
+    if (!notices.length) { if (section) section.style.display = 'none'; return; }
+    if (section) section.style.display = '';
+    feed.innerHTML = '';
+    notices.forEach(n => feed.appendChild(buildNoticeCard(n, readIdsSet.has(String(n.id)))));
+    recountUnread();
+  } catch { /* 네트워크 오류는 조용히 무시 */ }
 }
 
-function buildOnboardCard(card) {
-  const el = document.createElement('div');
-  el.className = `log-card ${card.cls}`;
-  el.dataset.cardId = card.id;
-
-  el.innerHTML = `
-    <div class="log-top">
-      <span class="log-type" style="color:${card.typeColor}">${card.typeLabel}</span>
-      <button class="log-dismiss">× 닫기</button>
+function buildNoticeCard(notice, isRead) {
+  const meta = NOTICE_META[notice.type] || NOTICE_META.info;
+  const date = String(notice.created_at || '').slice(0, 10);
+  const card = document.createElement('div');
+  card.className = `notice-card ${meta.cls}` + (isRead ? ' read' : '');
+  card.innerHTML = `
+    <div class="notice-top">
+      <span class="notice-badge">${meta.label}</span>
+      <span class="notice-date">${date}</span>
     </div>
-    <div class="log-msg">${card.msg}</div>
+    <div class="notice-title">${escapeHtml(notice.title)}</div>
   `;
-
-  el.querySelector('.log-dismiss').addEventListener('click', () => {
-    dismissCard(card.id, el);
-  });
-
-  return el;
+  card.querySelector('.notice-title').addEventListener('click', () => toggleNotice(notice, card));
+  return card;
 }
 
-async function dismissCard(id, el) {
-  el.remove();
-  const result = await new Promise(r => chrome.storage.local.get('dismissedCards', r));
-  const dismissed = result.dismissedCards || [];
-  if (!dismissed.includes(id)) {
-    await new Promise(r => chrome.storage.local.set({ dismissedCards: [...dismissed, id] }, r));
+// 제목 클릭 → 본문 펼침/접힘 + (최초 펼침 시) 읽음 처리
+async function toggleNotice(notice, card) {
+  const existing = card.querySelector('.notice-body');
+  if (existing) { existing.remove(); card.classList.remove('expanded'); return; }
+
+  card.classList.add('expanded');
+  const bodyEl = document.createElement('div');
+  bodyEl.className = 'notice-body';
+  card.appendChild(bodyEl);
+
+  if (noticeBodyCache.has(notice.id)) {
+    bodyEl.textContent = noticeBodyCache.get(notice.id);
+  } else {
+    bodyEl.textContent = '불러오는 중…';
+    try {
+      const res = await chrome.runtime.sendMessage({ type: 'GET_NOTICE_DETAIL', id: notice.id });
+      if (!res?.notice) throw new Error();
+      const body = res.notice.body || '';
+      noticeBodyCache.set(notice.id, body);
+      bodyEl.textContent = body;
+    } catch {
+      bodyEl.textContent = '내용을 불러오지 못했습니다.';
+    }
   }
+  if (!card.classList.contains('read')) {
+    card.classList.add('read');
+    await markNoticeRead(notice.id);
+    recountUnread();
+  }
+}
+
+// 미읽음 배지 갱신 (읽음 처리되지 않은 카드 수 기준)
+function recountUnread() {
+  const feed = shadow.getElementById('notice-feed');
+  const badge = shadow.getElementById('notice-unread');
+  if (!feed || !badge) return;
+  const n = feed.querySelectorAll('.notice-card:not(.read)').length;
+  if (n > 0) { badge.textContent = `미읽음 ${n}`; badge.style.display = ''; }
+  else badge.style.display = 'none';
+}
+
+async function markNoticeRead(id) {
+  if (!readIdsSet) readIdsSet = new Set();
+  if (readIdsSet.has(String(id))) return;
+  readIdsSet.add(String(id)); // 메모리 셋 공유 → 빠른 연속 펼침에도 쓰기 유실 없음
+  await chrome.storage.local.set({ readNoticeIds: [...readIdsSet] });
 }
 
 // ── 번역 시작 ─────────────────────────────────────────────────────────────────
@@ -706,31 +826,63 @@ function formatCredits(n) {
 
 // (이력 저장은 서비스워커가 담당 — 탭이 닫혀도 유지되도록. 사이드바는 로드/표시만.)
 
+// 지우기 버튼(섹션 헤더) 표시 토글
+function setClearBtnVisible(show) {
+  const btn = shadow.getElementById('btn-clear-hist');
+  if (btn) btn.style.display = show ? '' : 'none';
+}
+
 async function clearHistory() {
   try {
     await chrome.storage.local.remove('ytatHistory');
     const feed = shadow.getElementById('log-feed');
-    if (feed) feed.innerHTML = '';
+    if (feed) {
+      feed.innerHTML = '';
+      showEmptyHistory();
+    }
+    setClearBtnVisible(false);
   } catch {}
+}
+
+// 처리 기록이 없을 때 안내 문구 (버튼·카드가 모두 없을 때만)
+function showEmptyHistory() {
+  const feed = shadow.getElementById('log-feed');
+  if (!feed || shadow.getElementById('hist-empty')) return;
+  const el = document.createElement('div');
+  el.className = 'hist-empty';
+  el.id = 'hist-empty';
+  el.textContent = '아직 처리 기록이 없습니다.';
+  feed.appendChild(el);
+}
+
+function removeEmptyHistory() {
+  shadow.getElementById('hist-empty')?.remove();
 }
 
 // 이력 레코드 → 카드 DOM
 function buildHistoryCard(rec) {
   const card = document.createElement('div');
-  const type = rec.allSkipped ? 'info' : (rec.failCount > 0 ? 'error' : 'success');
+  const isErr = !!rec.errorText;
+  const type = isErr ? 'error'
+    : rec.stopped ? 'stopped'
+    : rec.allSkipped ? 'info'
+    : (rec.failCount > 0 ? 'error' : 'success');
   card.className = `log-card ${type}`;
 
   const time = new Date(rec.ts).toLocaleString('ko-KR', {
     month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
   });
 
-  const isErr = !!rec.errorText;
   const headLabel = isErr ? '❌ 실패'
     : rec.stopped ? '⏹ 중지됨'
     : rec.allSkipped ? '💡 건너뜀'
-    : rec.failCount > 0 ? '⚠️ 일부 실패'
+    : (rec.failCount > 0 || rec.metaError) ? '⚠️ 일부 실패'
     : '✅ 완료';
-  const headColor = (isErr || rec.failCount > 0) ? '#CF6679' : (rec.allSkipped ? '#BB86FC' : '#03DAC6');
+  const headColor = isErr ? '#CF6679'
+    : rec.stopped ? '#9E9E9E'
+    : (rec.failCount > 0 || rec.metaError) ? '#CF6679'
+    : rec.allSkipped ? '#BB86FC'
+    : '#03DAC6';
 
   const items = rec.items || [];
   const skipped = rec.skippedLangs || [];
@@ -748,9 +900,14 @@ function buildHistoryCard(rec) {
       const summary = failN > 0
         ? `📝 자막 ${items.length}개 언어 · ${okN} 성공 / ${failN} 실패`
         : `📝 자막 ${items.length}개 언어 번역`;
-      const chips = items
-        .map(i => `<span class="hist-lang ${i.ok ? 'ok' : 'fail'}">${escapeHtml(i.name)}</span>`)
-        .join('');
+      // 실패 언어는 항상 개별 칩으로, 성공 언어는 9개 이상이면 요약 칩으로 접음
+      const okItems = items.filter(i => i.ok);
+      const okChips = okItems.length > 8
+        ? `<span class="hist-lang more">✓ ${okItems.length}개 언어 성공</span>`
+        : okItems.map(i => `<span class="hist-lang ok">${escapeHtml(i.name)}</span>`).join('');
+      const failChips = items.filter(i => !i.ok)
+        .map(i => `<span class="hist-lang fail">${escapeHtml(i.name)}</span>`).join('');
+      const chips = okChips + failChips;
       lines.push(`<div class="hist-meta">${summary}</div><div class="hist-langs">${chips}</div>`);
     }
     // 이미 등록되어 건너뛴 자막 언어
@@ -761,6 +918,10 @@ function buildHistoryCard(rec) {
     if (rec.metaTitle || rec.metaDesc) {
       const t = [rec.metaTitle && '제목', rec.metaDesc && '설명'].filter(Boolean).join('·');
       lines.push(`<div class="hist-meta">🌐 ${t} 다국어 번역 등록</div>`);
+    }
+    // 제목/설명 번역 실패(크레딧 부족 등) — "완료"로 삼키지 않고 사유 표시
+    if (rec.metaError) {
+      lines.push(`<div class="hist-meta" style="color:#ff8a9b">⚠️ ${escapeHtml(rec.metaError)}</div>`);
     }
     // 아무것도 안 한 경우 방어
     if (!lines.length) {
@@ -801,24 +962,11 @@ async function loadHistory() {
     const list = r.ytatHistory || [];
     const feed = shadow.getElementById('log-feed');
     if (!feed) return;
-    if (!list.length) return; // 기록 없으면 지우기 버튼도 표시 안 함
-    ensureClearBar();
+    if (!list.length) { showEmptyHistory(); setClearBtnVisible(false); return; } // 기록 없으면 안내만
+    setClearBtnVisible(true);
     // 최신순 (저장이 이미 prepend라 그대로)
     list.forEach(rec => feed.appendChild(buildHistoryCard(rec)));
   } catch {}
-}
-
-// 이력 지우기 버튼 (기록이 1건이라도 있으면 상단 고정)
-function ensureClearBar() {
-  const feed = shadow.getElementById('log-feed');
-  if (!feed || shadow.getElementById('btn-clear-hist')) return;
-  const clearBar = document.createElement('div');
-  clearBar.className = 'hist-clear-bar';
-  clearBar.innerHTML = `<button class="hist-clear-btn" id="btn-clear-hist">🗑 처리 기록 지우기</button>`;
-  feed.prepend(clearBar);
-  clearBar.querySelector('#btn-clear-hist').addEventListener('click', () => {
-    if (confirm('처리 기록을 모두 지울까요? (되돌릴 수 없습니다)')) clearHistory();
-  });
 }
 
 // 진행 중 생성된 휘발성 로그 카드 제거
@@ -826,25 +974,23 @@ function clearTransientLogs() {
   const feed = shadow.getElementById('log-feed');
   if (!feed) return;
   feed.querySelectorAll('.log-transient').forEach(el => el.remove());
+  // 남은 카드가 없으면(이력도 없음) 빈 안내 복원 — addLog가 지운 안내를 되돌림
+  if (!feed.querySelector('.log-card')) showEmptyHistory();
 }
 
-// 새 이력 카드를 피드 최상단(지우기 버튼 아래)에 추가
+// 새 이력 카드를 피드 최상단에 추가
 function prependHistory(rec) {
   const feed = shadow.getElementById('log-feed');
   if (!feed) return;
-  ensureClearBar();
-  const clearBar = shadow.querySelector('.hist-clear-bar');
-  const card = buildHistoryCard(rec);
-  if (clearBar && clearBar.nextSibling) {
-    feed.insertBefore(card, clearBar.nextSibling);
-  } else {
-    feed.appendChild(card);
-  }
+  removeEmptyHistory();
+  setClearBtnVisible(true);
+  feed.insertBefore(buildHistoryCard(rec), feed.firstChild);
 }
 
 // ── 실시간 진행 로그 카드 (휘발성 — 완료 시 구조화 이력으로 별도 저장됨) ──────
 function addLog(type, label, msg, labelColor) {
   const feed = shadow.getElementById('log-feed');
+  removeEmptyHistory();
   const card = document.createElement('div');
   card.className = `log-card ${type} log-transient`;
 
@@ -853,18 +999,30 @@ function addLog(type, label, msg, labelColor) {
 
   card.innerHTML = `
     <div class="log-top">
-      <span class="log-type" style="color:${color}">${label}</span>
+      <span class="log-type" style="color:${color}">${escapeHtml(label)}</span>
       <span class="log-time">${time}</span>
     </div>
-    <div class="log-msg">${msg}</div>
+    <div class="log-msg">${escapeHtml(msg)}</div>
   `;
 
-  feed.prepend(card);
+  feed.insertBefore(card, feed.firstChild);
 }
 
 // ── SW 메시지 수신 ────────────────────────────────────────────────────────────
 let currentMsgHandler = null;   // 재마운트 시 리스너 중복 등록 방지
 let lastProgressLog   = '';     // 동일 진행 메시지 중복 로그 방지
+
+// 마운트 시 SW에 진행 상태를 물어 이미 번역 중이면 UI 복원 (새 탭/새로고침 후 진행률·중지 노출)
+async function restoreRunningState() {
+  try {
+    const status = await chrome.runtime.sendMessage({ type: MSG.GET_STATUS });
+    if (status?.isRunning) {
+      setRunning(true, status.targetLangs || []);
+      const p = status.progress || {};
+      if (p.total > 0) updateProgress((p.current / p.total) * 100, p.current, p.total);
+    }
+  } catch { /* SW 미기동/컨텍스트 무효 — 무시 */ }
+}
 
 function setupMessageListener() {
   if (currentMsgHandler) chrome.runtime.onMessage.removeListener(currentMsgHandler);
@@ -875,6 +1033,13 @@ function setupMessageListener() {
     switch (msg.type) {
       case MSG.TRANSLATION_PROGRESS: {
         if (!isRunning) setRunning(true, msg.targetLangs || []);
+        // 첫 진행 메시지에 targetLangs가 없어 칩이 비어있던 경우, 이후 도착 시 채움
+        else if (msg.targetLangs?.length && Object.keys(langChipState).length === 0) {
+          langChipState = {};
+          msg.targetLangs.forEach(code => { langChipState[code] = 'pending'; });
+          buildChipLabels(msg.targetLangs);
+          renderChips();
+        }
         if (msg.langDone && msg.lang) {
           langChipState[msg.lang] = 'done';
           renderChips();

@@ -1,4 +1,4 @@
-import { MSG, TARGET_LANGUAGES, getChunkSize } from '../lib/constants.js';
+import { MSG, TARGET_LANGUAGES, getChunkSize, API_BASE } from '../lib/constants.js';
 import { loadSettings } from '../lib/storage.js';
 import { reportError, reportTranslationResult, installGlobalErrorHandler, log, LOG_LEVEL, initSentry } from '../lib/logger.js';
 import {
@@ -44,14 +44,42 @@ function normalizeLangCode(code) {
   return code.split('-')[0].toLowerCase();
 }
 
+// 언어 동일성 비교 키 — zh는 간체(Hans)/번체(Hant)를 구분해야 하므로 스크립트까지 반영
+function langMatchKey(code) {
+  const c = String(code || '').toLowerCase();
+  const base = c.split('-')[0];
+  if (base !== 'zh') return base;
+  if (c.includes('hant') || c.includes('tw') || c.includes('hk') || c.includes('mo')) return 'zh-hant';
+  if (c.includes('hans') || c.includes('cn') || c.includes('sg')) return 'zh-hans';
+  return 'zh'; // 스크립트 불명 → 보수적으로 모든 zh 변형과 동일 취급
+}
+
+// 두 언어 코드가 같은 (쓰기) 언어인가 — zh 스크립트 구분, 불명 zh는 보수적으로 매칭
+function sameLang(a, b) {
+  const ka = langMatchKey(a), kb = langMatchKey(b);
+  if (!ka || !kb) return false;
+  if (ka === kb) return true;
+  if ((ka === 'zh' && kb.startsWith('zh')) || (kb === 'zh' && ka.startsWith('zh'))) return true;
+  return false;
+}
+
 function getLangName(code) {
   if (!code) return 'Unknown';
-  const norm = normalizeLangCode(code);
-  const lang = TARGET_LANGUAGES.find(l =>
-    normalizeLangCode(l.code) === norm || normalizeLangCode(l.ytCode) === norm
-  );
+  // sameLang로 zh 간체/번체를 구분 (번체 소스를 "간체"로 오식별하지 않도록)
+  const lang = TARGET_LANGUAGES.find(l => sameLang(l.code, code) || sameLang(l.ytCode, code));
   if (lang) return `${lang.name} (${lang.nativeName})`;
   return code;
+}
+
+// 대상 언어 목록에서 (1) 지원 목록에 없는 코드(과거 제거된 yue 등)와 (2) 콘텐츠 기본(소스) 언어를 제외
+// — 설정에 잔존한 유령 코드가 제목/설명 경로로 흘러가 과금되는 것을 방지
+function excludeBaseLang(codes, baseLang) {
+  return codes.filter(code => {
+    const lang = TARGET_LANGUAGES.find(l => l.code === code);
+    if (!lang) return false; // 지원하지 않는(제거된) 언어 코드 제외
+    if (!baseLang) return true;
+    return !sameLang(code, baseLang) && !sameLang(lang.ytCode, baseLang);
+  });
 }
 
 function friendlyError(err) {
@@ -215,23 +243,21 @@ async function prepareSubtitles(tabId, settings, needSubtitles = true) {
 }
 
 function filterTargetLangs(settings, trackInfo, existingCaptions) {
-  const normSourceLang = normalizeLangCode(trackInfo.language);
+  const sourceLang = trackInfo.language;
   const alreadyTranslated = [];
 
   const targetLangs = settings.targetLangs.filter(code => {
     const lang = TARGET_LANGUAGES.find(l => l.code === code);
     if (!lang) return false;
 
-    const normTarget   = normalizeLangCode(code);
-    const normYtTarget = normalizeLangCode(lang.ytCode);
-
-    if ((normTarget === normSourceLang || normYtTarget === normSourceLang) &&
-        settings.sourceLang === 'auto' && !trackInfo.isASR) {
+    // 콘텐츠 기본(소스) 언어는 설정 선택 여부·자동감지/ASR 여부와 무관하게 항상 제외
+    // (zh 간체/번체는 서로 다른 언어로 취급 — sameLang가 스크립트 구분)
+    if (sameLang(code, sourceLang) || sameLang(lang.ytCode, sourceLang)) {
       return false;
     }
 
     const hasExisting = existingCaptions.some(c =>
-      normalizeLangCode(c.snippet?.language) === normYtTarget &&
+      sameLang(c.snippet?.language, lang.ytCode) &&
       c.snippet?.trackKind === 'standard'
     );
     if (hasExisting) { alreadyTranslated.push(lang.name); return false; }
@@ -618,15 +644,24 @@ async function runTranslationCredits(tabId, settings) {
 
     // 6-1. 제목/설명 번역 (크레딧 모드 — 자막과 별도 mini job)
     let metaDone = false;
+    let metaError = null;
     if ((settings.translateTitle || settings.translateDescription) && !state.shouldStop) {
       try {
+        // 제목/설명의 기본 언어(영상 기본 언어 우선, 없으면 소스 트랙 언어)도 대상에서 제외
+        const metaBaseLang = videoSnippet?.defaultLanguage || videoSnippet?.defaultAudioLanguage || trackInfo.language;
         await translateAndUploadMetadataCredits(
-          videoId, videoSnippet, settings.targetLangs,
+          videoId, videoSnippet, excludeBaseLang(settings.targetLangs, metaBaseLang),
           getLangName(trackInfo.language), settings
         );
         metaDone = true;
       } catch (err) {
+        // 402(크레딧 부족)를 "완료"로 삼키지 않도록 사용자에게 명시 (자막 성공분은 유지)
+        const raw = err?.message || '';
+        metaError = /402|insufficient_credits/i.test(raw)
+          ? '크레딧이 부족해 제목/설명 번역을 완료하지 못했습니다. ⚙️ 설정에서 충전 후 다시 시도해 주세요.'
+          : `제목/설명 번역에 실패했습니다: ${friendlyError(err)}`;
         log(`제목/설명 번역 실패: ${err.message}`, LOG_LEVEL.WARN);
+        broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: `⚠️ ${metaError}`, current: 1, total: 1 }, state.tabId);
       }
     }
 
@@ -676,6 +711,7 @@ async function runTranslationCredits(tabId, settings) {
       skippedLangs: alreadyTranslated || [],
       metaTitle:    metaDone && settings.translateTitle,
       metaDesc:     metaDone && settings.translateDescription,
+      metaError,
       successCount, failCount: errors.length,
       creditsUsed, creditsRemaining,
       stopped:      wasStopped,
@@ -754,10 +790,29 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'GET_CREDITS') {
-    fetchCredits()
+    // 수동적 잔액 조회는 비대화형(팝업 없음). 미로그인이면 NOT_SIGNED_IN 반환.
+    fetchCredits(message.interactive === true)
       .then(data => sendResponse({ balance: data.balance }))
       .catch(err => sendResponse({ balance: null, error: err.message }));
     return true; // 비동기 응답
+  }
+
+  // 공지 목록 — 콘텐츠 스크립트(사이드바)는 CORS로 직접 호출 불가 → SW 경유(공개 API, 인증 불필요)
+  if (message.type === 'GET_NOTICES') {
+    fetch(`${API_BASE}/notices?page=1`)
+      .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+      .then(data => sendResponse({ notices: data.notices || [] }))
+      .catch(err => sendResponse({ notices: null, error: err.message }));
+    return true;
+  }
+
+  // 공지 본문(상세)
+  if (message.type === 'GET_NOTICE_DETAIL') {
+    fetch(`${API_BASE}/notices/${message.id}`)
+      .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
+      .then(data => sendResponse({ notice: data }))
+      .catch(err => sendResponse({ notice: null, error: err.message }));
+    return true;
   }
 });
 

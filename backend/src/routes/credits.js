@@ -63,7 +63,7 @@ app.post('/checkout', async (c) => {
     .insert({
       user_id:    userId,
       portone_id: orderId,
-      pg_provider: currency === 'KRW' ? 'toss' : 'stripe',
+      pg_provider: currency === 'KRW' ? 'kakaopay' : 'manual',
       amount_paid: amount,
       currency,
       amount_usd:       currency === 'USD' ? amount : amount / KRW_TO_USD_RATE,
@@ -78,7 +78,7 @@ app.post('/checkout', async (c) => {
   return c.json({
     payment_id: payment.id,
     order_id:   orderId,
-    pg_provider: currency === 'KRW' ? 'toss' : 'stripe',
+    pg_provider: currency === 'KRW' ? 'kakaopay' : 'manual',
     amount,
     currency
   });

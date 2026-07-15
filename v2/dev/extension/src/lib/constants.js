@@ -8,33 +8,41 @@ export const TRANSLATION_MODES = {
 };
 
 // ── 지원 언어 (26개) ──────────────────────────────────────────────────────────
+// region: 설정 화면 언어 그룹핑용 (지역·지역 내부 모두 사용자 수 내림차순 정렬)
 export const TARGET_LANGUAGES = [
-  { code: 'en',    name: 'English',                   nativeName: 'English',          ytCode: 'en'      },
-  { code: 'zh-CN', name: 'Mandarin (Simplified)',      nativeName: '中文(简体)',        ytCode: 'zh-Hans' },
-  { code: 'hi',    name: 'Hindi',                     nativeName: 'हिन्दी',            ytCode: 'hi'      },
-  { code: 'es',    name: 'Spanish',                   nativeName: 'Español',          ytCode: 'es'      },
-  { code: 'fr',    name: 'French',                    nativeName: 'Français',         ytCode: 'fr'      },
-  { code: 'ar',    name: 'Modern Standard Arabic',    nativeName: 'العربية',          ytCode: 'ar'      },
-  { code: 'pt',    name: 'Portuguese',                nativeName: 'Português',        ytCode: 'pt'      },
-  { code: 'bn',    name: 'Bengali',                   nativeName: 'বাংলা',             ytCode: 'bn'      },
-  { code: 'ru',    name: 'Russian',                   nativeName: 'Русский',          ytCode: 'ru'      },
-  { code: 'ur',    name: 'Urdu',                      nativeName: 'اردو',              ytCode: 'ur'      },
-  { code: 'id',    name: 'Indonesian',                nativeName: 'Bahasa Indonesia', ytCode: 'id'      },
-  { code: 'de',    name: 'German',                    nativeName: 'Deutsch',          ytCode: 'de'      },
-  { code: 'ja',    name: 'Japanese',                  nativeName: '日本語',            ytCode: 'ja'      },
-  { code: 'pcm',   name: 'Nigerian Pidgin',           nativeName: 'Naijá',            ytCode: 'pcm'     },
-  { code: 'arz',   name: 'Egyptian Arabic',           nativeName: 'مصرى',             ytCode: 'arz'     },
-  { code: 'mr',    name: 'Marathi',                   nativeName: 'मराठी',             ytCode: 'mr'      },
-  { code: 'vi',    name: 'Vietnamese',                nativeName: 'Tiếng Việt',       ytCode: 'vi'      },
-  { code: 'te',    name: 'Telugu',                    nativeName: 'తెలుగు',            ytCode: 'te'      },
-  { code: 'tr',    name: 'Turkish',                   nativeName: 'Türkçe',           ytCode: 'tr'      },
-  { code: 'pa',    name: 'Western Punjabi',           nativeName: 'پنجابی',           ytCode: 'pa'      },
-  { code: 'sw',    name: 'Swahili',                   nativeName: 'Kiswahili',        ytCode: 'sw'      },
-  { code: 'tl',    name: 'Tagalog',                   nativeName: 'Tagalog',          ytCode: 'fil'     },
-  { code: 'ta',    name: 'Tamil',                     nativeName: 'தமிழ்',             ytCode: 'ta'      },
-  { code: 'yue',   name: 'Yue Chinese (Cantonese)',   nativeName: '粵語',              ytCode: 'yue'     },
-  { code: 'wuu',   name: 'Wu Chinese (Shanghainese)', nativeName: '吴语',              ytCode: 'wuu'     },
-  { code: 'ko',    name: 'Korean',                    nativeName: '한국어',            ytCode: 'ko'      },
+  // 글로벌 (여러 대륙에서 폭넓게 사용)
+  { code: 'en',    name: 'English',                nativeName: 'English',          ytCode: 'en',      region: '글로벌' },
+  { code: 'es',    name: 'Spanish',                nativeName: 'Español',          ytCode: 'es',      region: '글로벌' },
+  { code: 'fr',    name: 'French',                 nativeName: 'Français',         ytCode: 'fr',      region: '글로벌' },
+  { code: 'ar',    name: 'Modern Standard Arabic', nativeName: 'العربية',          ytCode: 'ar',      region: '글로벌' },
+  { code: 'pt',    name: 'Portuguese',             nativeName: 'Português',        ytCode: 'pt',      region: '글로벌' },
+  // 동아시아
+  { code: 'zh-CN', name: 'Mandarin (Simplified)',  nativeName: '中文(简体)',        ytCode: 'zh-Hans', region: '동아시아' },
+  { code: 'zh-TW', name: 'Chinese (Traditional)',  nativeName: '中文(繁體)',        ytCode: 'zh-Hant', region: '동아시아' },
+  { code: 'ja',    name: 'Japanese',               nativeName: '日本語',            ytCode: 'ja',      region: '동아시아' },
+  { code: 'ko',    name: 'Korean',                 nativeName: '한국어',            ytCode: 'ko',      region: '동아시아' },
+  // 남아시아
+  { code: 'hi',    name: 'Hindi',                  nativeName: 'हिन्दी',            ytCode: 'hi',      region: '남아시아' },
+  { code: 'bn',    name: 'Bengali',                nativeName: 'বাংলা',             ytCode: 'bn',      region: '남아시아' },
+  { code: 'ur',    name: 'Urdu',                   nativeName: 'اردو',              ytCode: 'ur',      region: '남아시아' },
+  { code: 'pa',    name: 'Western Punjabi',        nativeName: 'پنجابی',           ytCode: 'pa',      region: '남아시아' },
+  { code: 'ta',    name: 'Tamil',                  nativeName: 'தமிழ்',             ytCode: 'ta',      region: '남아시아' },
+  // 유럽
+  { code: 'ru',    name: 'Russian',                nativeName: 'Русский',          ytCode: 'ru',      region: '유럽' },
+  { code: 'de',    name: 'German',                 nativeName: 'Deutsch',          ytCode: 'de',      region: '유럽' },
+  { code: 'it',    name: 'Italian',                nativeName: 'Italiano',         ytCode: 'it',      region: '유럽' },
+  { code: 'pl',    name: 'Polish',                 nativeName: 'Polski',           ytCode: 'pl',      region: '유럽' },
+  { code: 'nl',    name: 'Dutch',                  nativeName: 'Nederlands',       ytCode: 'nl',      region: '유럽' },
+  // 동남아시아
+  { code: 'id',    name: 'Indonesian',             nativeName: 'Bahasa Indonesia', ytCode: 'id',      region: '동남아시아' },
+  { code: 'vi',    name: 'Vietnamese',             nativeName: 'Tiếng Việt',       ytCode: 'vi',      region: '동남아시아' },
+  { code: 'tl',    name: 'Tagalog',                nativeName: 'Tagalog',          ytCode: 'fil',     region: '동남아시아' },
+  { code: 'th',    name: 'Thai',                   nativeName: 'ไทย',               ytCode: 'th',      region: '동남아시아' },
+  // 중동·서아시아
+  { code: 'tr',    name: 'Turkish',                nativeName: 'Türkçe',           ytCode: 'tr',      region: '중동·서아시아' },
+  { code: 'fa',    name: 'Persian',                nativeName: 'فارسی',             ytCode: 'fa',      region: '중동·서아시아' },
+  // 아프리카
+  { code: 'sw',    name: 'Swahili',                nativeName: 'Kiswahili',        ytCode: 'sw',      region: '아프리카' },
 ];
 
 // ── 백엔드 API ────────────────────────────────────────────────────────────────

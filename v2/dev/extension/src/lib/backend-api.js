@@ -1,10 +1,13 @@
 import { API_BASE } from './constants.js';
 
-function getToken() {
+// interactive=false면 이미 로그인된 경우에만 토큰을 조용히 반환(동의 팝업 없음).
+// 미로그인 시 NOT_SIGNED_IN으로 거부 — 수동적 잔액 조회가 무단 OAuth 팝업을 띄우지 않도록.
+function getToken(interactive = true) {
   return new Promise((resolve, reject) => {
-    chrome.identity.getAuthToken({ interactive: true }, (token) => {
-      if (chrome.runtime.lastError || !token) reject(new Error('AUTH_FAILED'));
-      else resolve(token);
+    chrome.identity.getAuthToken({ interactive }, (token) => {
+      if (chrome.runtime.lastError || !token) {
+        reject(new Error(interactive ? 'AUTH_FAILED' : 'NOT_SIGNED_IN'));
+      } else resolve(token);
     });
   });
 }
@@ -14,8 +17,8 @@ function removeCachedToken(token) {
 }
 
 // 401 발생 시 만료 토큰 제거 후 1회 재시도
-async function authFetch(url, options = {}) {
-  let token = await getToken();
+async function authFetch(url, options = {}, interactive = true) {
+  let token = await getToken(interactive);
   const doFetch = (t) => fetch(url, {
     ...options,
     headers: { Authorization: `Bearer ${t}`, 'Content-Type': 'application/json', ...options.headers },
@@ -24,14 +27,14 @@ async function authFetch(url, options = {}) {
   let res = await doFetch(token);
   if (res.status === 401) {
     await removeCachedToken(token);
-    token = await getToken();
+    token = await getToken(interactive);
     res = await doFetch(token);
   }
   return res;
 }
 
-export async function fetchCredits() {
-  const res = await authFetch(`${API_BASE}/credits`);
+export async function fetchCredits(interactive = true) {
+  const res = await authFetch(`${API_BASE}/credits`, {}, interactive);
   if (!res.ok) throw new Error(`CREDITS_FETCH_FAILED_${res.status}`);
   return res.json(); // { balance, tier, multiplier }
 }

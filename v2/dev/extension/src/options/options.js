@@ -119,7 +119,7 @@ function renderNoticeItems(notices) {
   }
   noticeList.innerHTML = notices.map(n => {
     const isRead = readIds.has(String(n.id));
-    const date = n.created_at.slice(0, 10);
+    const date = String(n.created_at || '').slice(0, 10);
     return `<li class="notice-item ${isRead ? 'read' : 'unread'}" data-id="${n.id}">
       <span class="notice-item-title">${escapeHtml(n.title)}</span>
       <span class="notice-item-date">${date}</span>
@@ -225,7 +225,31 @@ function buildSourceLang(selected) {
 // ── 언어 그리드 빌드 ──────────────────────────────────────────────────────────
 function buildLangGrid() {
   langGrid.innerHTML = '';
-  TARGET_LANGUAGES.forEach(({ code, name, nativeName }) => {
+  let currentRegion = null;
+  TARGET_LANGUAGES.forEach(({ code, name, nativeName, region }) => {
+    // 지역이 바뀌면 전체 폭 헤더 + 지역 전체 선택/해제 토글 삽입
+    if (region && region !== currentRegion) {
+      currentRegion = region;
+      const regionCodes = TARGET_LANGUAGES.filter(l => l.region === region).map(l => l.code);
+      const allSelected = regionCodes.every(c => selectedLangs.has(c));
+
+      const header = document.createElement('div');
+      header.className = 'lang-region';
+
+      const label = document.createElement('span');
+      label.textContent = region;
+
+      const toggle = document.createElement('button');
+      toggle.type = 'button';
+      toggle.className = 'lang-region-toggle';
+      toggle.textContent = allSelected ? '전체 해제' : '전체 선택';
+      toggle.addEventListener('click', (e) => { e.preventDefault(); toggleRegion(region); });
+
+      header.appendChild(label);
+      header.appendChild(toggle);
+      langGrid.appendChild(header);
+    }
+
     const item = document.createElement('label');
     item.className = 'lang-item' + (selectedLangs.has(code) ? ' selected' : '');
 
@@ -249,12 +273,43 @@ function buildLangGrid() {
   });
 }
 
+const LANG_NOTICE_DEFAULT = '✅ 선택한 언어로 자막·제목·설명을 번역합니다. 영상의 기본 언어는 자동으로 제외됩니다.';
+let langNoticeTimer = null;
+// 언어 그리드 상단 안내를 잠시 경고 문구로 바꿨다가 원복 (최소 1개 규칙 안내)
+function flashLangNotice(msg) {
+  const el = document.getElementById('langNotice');
+  if (!el) return;
+  el.textContent = msg;
+  el.classList.add('notice-warn');
+  clearTimeout(langNoticeTimer);
+  langNoticeTimer = setTimeout(() => {
+    el.textContent = LANG_NOTICE_DEFAULT;
+    el.classList.remove('notice-warn');
+  }, 2600);
+}
+
 function toggleLang(code) {
   if (selectedLangs.has(code)) {
-    if (selectedLangs.size === 1) return;
+    if (selectedLangs.size === 1) { flashLangNotice('⚠️ 최소 1개 언어는 선택되어 있어야 합니다.'); return; }
     selectedLangs.delete(code);
   } else {
     selectedLangs.add(code);
+  }
+  buildLangGrid();
+}
+
+// 지역 전체 선택/해제 — 모두 선택돼 있으면 해제, 아니면 전체 선택 (최소 1개 유지)
+function toggleRegion(region) {
+  const codes = TARGET_LANGUAGES.filter(l => l.region === region).map(l => l.code);
+  const allSelected = codes.every(c => selectedLangs.has(c));
+  if (allSelected) {
+    codes.forEach(c => selectedLangs.delete(c));
+    if (selectedLangs.size === 0) {
+      selectedLangs.add(TARGET_LANGUAGES[0].code);
+      flashLangNotice('⚠️ 최소 1개 언어는 선택되어 있어야 해 영어를 유지했습니다.');
+    }
+  } else {
+    codes.forEach(c => selectedLangs.add(c));
   }
   buildLangGrid();
 }

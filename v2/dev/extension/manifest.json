@@ -14,7 +14,8 @@
   "host_permissions": [
     "https://studio.youtube.com/*",
     "https://www.googleapis.com/*",
-    "https://*.workers.dev/*"
+    "https://yt-auto-translator-api.1009yjh.workers.dev/*",
+    "https://yt-auto-translator-logger.1009yjh.workers.dev/*"
   ],
   "externally_connectable": {
     "matches": ["https://silver-smiths.com/*"]
@@ -51,8 +52,7 @@
         "assets/*",
         "src/content/sidebar.js",
         "src/lib/constants.js",
-        "src/lib/storage.js",
-        "src/lib/logger.js"
+        "src/lib/storage.js"
       ],
       "matches": ["https://studio.youtube.com/*"]
     }

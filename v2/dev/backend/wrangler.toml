@@ -1,4 +1,6 @@
-name = "yt-auto-translator-api"
+# ⚠️ 이 폴더(v2/dev/backend)는 개발 사본입니다. 프로덕션 배포는 저장소 루트의 backend/ 를 사용하세요.
+# 실수로 이 폴더에서 배포해도 프로덕션(yt-auto-translator-api)을 덮어쓰지 않도록 name을 분리했습니다.
+name = "yt-auto-translator-api-dev"
 main = "src/index.js"
 compatibility_date = "2025-01-01"
 compatibility_flags = ["nodejs_compat"]

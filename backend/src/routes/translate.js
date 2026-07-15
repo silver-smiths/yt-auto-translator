@@ -281,6 +281,41 @@ app.post('/job', async (c) => {
 
   const sb = getSupabase(c.env);
 
+  // 미정산 작업 처리 — 클라이언트가 PATCH(정산)를 보내지 않고 job을 무한 재생성해
+  // 무료 번역하는 우회를 차단한다.
+  //  (1) 유예시간(2분) 초과한 running·미차감 작업 = 버려진 작업 → 강제 정산
+  //  (2) 유예 내 미정산 작업이 과도하면(정상 흐름은 자막+메타 최대 2건) 남용으로 보고 차단
+  const GRACE_MS = 2 * 60 * 1000;
+  const nowMs = Date.now();
+  const { data: runningJobs } = await sb
+    .from('translation_jobs')
+    .select('id, api_cost_usd, created_at')
+    .eq('user_id', userId)
+    .eq('status', 'running')
+    .is('deducted_at', null);
+
+  let recentUnsettled = 0;
+  for (const j of runningJobs || []) {
+    const age = nowMs - new Date(j.created_at).getTime();
+    if (age <= GRACE_MS) { recentUnsettled++; continue; } // 진행 중일 수 있음 → 정산 보류
+    if (j.api_cost_usd > 0) {
+      const { error: dErr } = await sb.rpc('deduct_credits', {
+        p_user_id: userId, p_job_id: j.id, p_api_cost: j.api_cost_usd, p_multiplier: CREDIT_PER_USD,
+      });
+      // 차감 성공 시에만 정산 마킹 (실패 시 다음 기회에 재시도 — 006 없이도 이중차감 방지)
+      if (!dErr) {
+        await sb.from('translation_jobs')
+          .update({ status: 'stopped', deducted_at: new Date().toISOString() })
+          .eq('id', j.id);
+      }
+    } else {
+      await sb.from('translation_jobs').update({ status: 'stopped' }).eq('id', j.id);
+    }
+  }
+  if (recentUnsettled >= 4) {
+    return c.json({ error: 'TOO_MANY_ACTIVE_JOBS' }, 429);
+  }
+
   // 잔액이 0 이하(마이너스 부채 포함)면 새 작업 시작 거부 — overdraft 반복 악용 차단
   const { data: account } = await sb
     .from('credit_accounts')

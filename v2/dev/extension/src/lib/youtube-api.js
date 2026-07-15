@@ -121,6 +121,23 @@ function normalizeLangCode(code) {
   return code.split('-')[0].toLowerCase();
 }
 
+// 언어 동일성 비교 — zh는 간체(Hans)/번체(Hant)를 구분 (service-worker.js의 sameLang와 동일 규칙)
+function langMatchKey(code) {
+  const c = String(code || '').toLowerCase();
+  const base = c.split('-')[0];
+  if (base !== 'zh') return base;
+  if (c.includes('hant') || c.includes('tw') || c.includes('hk') || c.includes('mo')) return 'zh-hant';
+  if (c.includes('hans') || c.includes('cn') || c.includes('sg')) return 'zh-hans';
+  return 'zh';
+}
+function sameLang(a, b) {
+  const ka = langMatchKey(a), kb = langMatchKey(b);
+  if (!ka || !kb) return false;
+  if (ka === kb) return true;
+  if ((ka === 'zh' && kb.startsWith('zh')) || (kb === 'zh' && ka.startsWith('zh'))) return true;
+  return false;
+}
+
 // =============================================
 // Public API — 영상 정보
 // =============================================
@@ -248,9 +265,9 @@ export async function fetchSourceSubtitles(captions, sourceLang, videoDefaultLan
  * ASR 트랙은 update 대상에서 제외하고 새로 insert함
  */
 export async function uploadCaption(videoId, ytLangCode, srtContent, existingCaptions = []) {
-  const normTarget = normalizeLangCode(ytLangCode);
+  // zh 간체/번체를 구분해 매칭 — 다른 스크립트의 기존 트랙을 덮어쓰지 않도록
   const existing = existingCaptions.find(c => {
-    return normalizeLangCode(c.snippet?.language) === normTarget &&
+    return sameLang(c.snippet?.language, ytLangCode) &&
            c.snippet?.trackKind === 'standard';
   });
 
