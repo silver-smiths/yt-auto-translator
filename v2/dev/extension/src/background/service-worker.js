@@ -189,16 +189,28 @@ async function prepareSubtitles(tabId, settings, needSubtitles = true) {
   }
 
   broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: '원본 자막 불러오는 중...', current: 0, total: state.progress.total });
-  const { subtitles, trackInfo } = await fetchSourceSubtitles(
-    existingCaptions,
-    settings.sourceLang,
-    videoSnippet?.defaultLanguage,
-    videoSnippet?.defaultAudioLanguage
-  );
-
-  if (!subtitles.length) throw new Error('원본 자막 내용이 비어 있습니다.');
-
-  return { videoId, videoSnippet, subtitles, trackInfo, existingCaptions };
+  const wantMeta = settings.translateTitle || settings.translateDescription;
+  try {
+    const { subtitles, trackInfo } = await fetchSourceSubtitles(
+      existingCaptions,
+      settings.sourceLang,
+      videoSnippet?.defaultLanguage,
+      videoSnippet?.defaultAudioLanguage
+    );
+    if (!subtitles.length) throw new Error('원본 자막 내용이 비어 있습니다.');
+    return { videoId, videoSnippet, subtitles, trackInfo, existingCaptions };
+  } catch (subErr) {
+    // 자막 준비 실패: 제목/설명 번역이 켜져 있으면 자막만 포기하고 메타는 살린다.
+    // 자막만 원한 경우엔 그대로 실패 처리.
+    if (!wantMeta) throw subErr;
+    const lang = videoSnippet?.defaultLanguage || videoSnippet?.defaultAudioLanguage || settings.sourceLang || 'auto';
+    return {
+      videoId, videoSnippet, existingCaptions,
+      subtitles: [],
+      trackInfo: { language: lang, trackKind: 'none', isASR: false },
+      subtitlesError: subErr.message,
+    };
+  }
 }
 
 function filterTargetLangs(settings, trackInfo, existingCaptions) {
@@ -334,10 +346,19 @@ async function runTranslationCredits(tabId, settings) {
 
     // 2. YouTube 인증 + 자막 가져오기 (자막 OFF면 다운로드 스킵 → API 절약)
     const needSubtitles = settings.translateSubtitles !== false;
-    const { videoId, videoSnippet, subtitles: sourceSubtitles, trackInfo, existingCaptions } =
+    const { videoId, videoSnippet, subtitles: sourceSubtitles, trackInfo, existingCaptions, subtitlesError } =
       await prepareSubtitles(tabId, settings, needSubtitles);
     vId = videoId;
     vTitle = videoSnippet?.title || videoId;
+
+    // 자막 준비는 실패했지만 제목/설명 번역은 살아남은 경우 — 자막만 건너뜀
+    if (subtitlesError) {
+      broadcast({
+        type: MSG.TRANSLATION_PROGRESS,
+        langName: '⚠️ 원본 자막이 없어 자막 번역은 건너뜁니다. 제목/설명만 번역합니다.',
+        current: 0, total: state.progress.total,
+      });
+    }
 
     const sourceLangName = getLangName(trackInfo.language);
     const trackKindLabel = trackInfo.isASR ? '(자동생성)' : '(수동업로드)';
@@ -349,8 +370,8 @@ async function runTranslationCredits(tabId, settings) {
 
     // 3. 대상 언어 필터링
     let { targetLangs, alreadyTranslated } = filterTargetLangs(settings, trackInfo, existingCaptions);
-    if (settings.translateSubtitles === false) {
-      targetLangs = [];
+    if (settings.translateSubtitles === false || subtitlesError) {
+      targetLangs = [];        // 자막 OFF이거나 원본 자막이 없으면 자막 번역 스킵
       alreadyTranslated = [];
     }
 
