@@ -8,7 +8,9 @@
 
 **핵심 방어는 견고 (✅ 확인):** aud 검증(다른 앱 토큰 차단), 서버측 admin 강제(admin_accounts 조회 — 버튼 숨김은 장식), Portone 재검증(위조 지급 불가), 릴레이 화이트리스트, 크레딧/결제 위조 경로 없음, 시크릿 클라이언트 미노출, CORS/SQL인젝션 안전.
 
-**🔴 R1 (오픈 전 개선 권장) — OAuth force-ssl 토큰을 웹페이지에 위임:** silver-smiths.com 페이지가 `YTAT_GET_AUTH_TOKEN`으로 youtube.force-ssl 스코프 토큰을 받아감. 관리자 페이지는 sessionStorage 저장, 결제 페이지는 관리자 버튼 노출용. 결제·관리자 페이지의 3rd-party 스크립트(GTM/Portone/Chart.js CDN) 침해나 XSS 시 → 사용자 YouTube 계정 탈취 가능. origin 검증(silver-smiths.com 한정)은 있으나 "그 origin 자체"가 표면.
+**✅ R1 해결 완료 (2026-07-12):** 세션 토큰 교환 방식 도입. admin_sessions 테이블 + POST /auth/session으로 익스텐션이 Google 토큰을 세션 토큰(YouTube 권한 없음, 2h)으로 교환해 웹페이지에 전달. force-ssl 토큰이 웹에 노출되지 않음. 실전 검증: 관리자 계정 접속 OK / 비관리자 리다이렉트 OK. (아래 원문은 이력)
+
+**~~🔴 R1 (오픈 전 개선 권장) — OAuth force-ssl 토큰을 웹페이지에 위임~~:** silver-smiths.com 페이지가 `YTAT_GET_AUTH_TOKEN`으로 youtube.force-ssl 스코프 토큰을 받아감. 관리자 페이지는 sessionStorage 저장, 결제 페이지는 관리자 버튼 노출용. 결제·관리자 페이지의 3rd-party 스크립트(GTM/Portone/Chart.js CDN) 침해나 XSS 시 → 사용자 YouTube 계정 탈취 가능. origin 검증(silver-smiths.com 한정)은 있으나 "그 origin 자체"가 표면.
 - 완화안 (선택 필요): ① 결제 페이지에서 토큰 요청 제거(관리자 버튼 삭제) → 일반 사용자 경로 노출 원천 차단 ② 관리자 페이지는 백엔드 단기 세션ID 교환으로 force-ssl 토큰 웹 노출 제거 ③ Chart.js 등 CDN 자체 호스팅
 
 **🟡 R2 레이트리밋 부재** (오픈 후) — aud 검증으로 무차별은 차단되나 정상 사용자 남용/DoS 방어 없음. Cloudflare Rate Limiting 권장.
