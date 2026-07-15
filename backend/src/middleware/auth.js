@@ -13,6 +13,24 @@ export async function authMiddleware(c, next) {
 
   const token = authHeader.slice(7);
 
+  // ── 세션 토큰 경로 (웹페이지용 — YouTube 권한 없는 단기 토큰) ──────────
+  if (token.startsWith('ytat_sess_')) {
+    const sb = getSupabase(c.env);
+    const { data: sess } = await sb
+      .from('admin_sessions')
+      .select('user_id, email, expires_at')
+      .eq('token', token)
+      .single();
+    if (!sess || new Date(sess.expires_at) < new Date()) {
+      return c.json({ error: 'SESSION_EXPIRED' }, 401);
+    }
+    c.set('userId', sess.user_id);
+    c.set('email',  sess.email);
+    await next();
+    return;
+  }
+
+  // ── Google OAuth 토큰 경로 (익스텐션 직접 호출) ──────────────────────
   // Google tokeninfo로 검증
   let info;
   try {

@@ -73,3 +73,10 @@ export async function updateTranslationJob(jobId, params) {
   });
   if (!res.ok) throw new Error(`UPDATE_JOB_FAILED_${res.status}`);
 }
+
+// Google 토큰 → 웹페이지용 세션 토큰 교환 (YouTube 권한 없는 단기 토큰)
+export async function exchangeSession() {
+  const res = await authFetch(`${API_BASE}/auth/session`, { method: 'POST' });
+  if (!res.ok) throw new Error(`SESSION_FAILED_${res.status}`);
+  return res.json(); // { session_token, is_admin, email }
+}

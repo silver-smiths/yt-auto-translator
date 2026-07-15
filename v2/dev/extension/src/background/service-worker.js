@@ -18,6 +18,7 @@ import {
   createTranslationJob,
   translateChunk,
   updateTranslationJob,
+  exchangeSession,
 } from '../lib/backend-api.js';
 import {
   getSavedTranslations,
@@ -779,14 +780,12 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
     return true;
   }
 
-  if (message.type === 'YTAT_GET_AUTH_TOKEN') {
-    chrome.identity.getAuthToken({ interactive: false }, (token) => {
-      if (chrome.runtime.lastError || !token) {
-        sendResponse({ ok: false });
-      } else {
-        sendResponse({ ok: true, token });
-      }
-    });
+  // 세션 토큰 교환 — Google 토큰은 익스텐션 내부에서만 쓰고, 웹페이지엔 YouTube 권한 없는
+  // 단기 세션 토큰만 넘긴다 (계정 토큰 유출 방지).
+  if (message.type === 'YTAT_GET_SESSION') {
+    exchangeSession()
+      .then(d => sendResponse({ ok: true, sessionToken: d.session_token, isAdmin: d.is_admin }))
+      .catch(err => sendResponse({ ok: false, error: err.message }));
     return true;
   }
 });

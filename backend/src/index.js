@@ -7,6 +7,7 @@ import translateRouter from './routes/translate.js';
 import webhookRouter   from './routes/webhook.js';
 import noticesRouter   from './routes/notices.js';
 import adminRouter     from './routes/admin.js';
+import authRouter      from './routes/auth.js';
 import geminiRelayRouter from './routes/gemini-relay.js';
 
 const app = new Hono();
@@ -40,10 +41,12 @@ app.on(['POST', 'PATCH', 'DELETE'], ['/notices', '/notices/*'],
   authMiddleware, adminMiddleware);
 
 // ── 인증 필요 라우트 ──────────────────────────────────────
+app.use('/auth/*',            authMiddleware); // Google 토큰 → 세션 토큰 교환
 app.use('/credits/*',         authMiddleware);
 app.use('/translate/*',       authMiddleware);
 app.use('/admin/*',           authMiddleware, adminMiddleware);
 
+app.route('/auth',      authRouter);
 app.route('/credits',   creditsRouter);
 app.route('/translate', translateRouter);
 app.route('/admin',     adminRouter);
