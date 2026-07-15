@@ -55,17 +55,6 @@ const CSS = `
 }
 .s-close:hover { color: rgba(255,255,255,0.7); }
 
-/* ── 공지 배너 ── */
-.s-quota-banner {
-  display: flex; align-items: flex-start; gap: 6px;
-  padding: 8px 14px; flex-shrink: 0;
-  background: rgba(255,193,7,0.08);
-  border-bottom: 1px solid rgba(255,193,7,0.2);
-  font-size: 11px; line-height: 1.5;
-  color: rgba(255,255,255,0.75);
-}
-.s-quota-banner .banner-icon { flex-shrink: 0; }
-
 /* ── 모드 스트립 ── */
 .s-mode-strip {
   display: flex; align-items: center; justify-content: space-between;
@@ -405,11 +394,6 @@ function buildSidebarHTML() {
         <span class="s-title">YouTube 번역 AI</span>
       </div>
       <button class="s-close" id="btn-close">&times;</button>
-    </div>
-
-    <div class="s-quota-banner" id="quota-banner">
-      <span class="banner-icon">⏳</span>
-      <span>YouTube 측의 API 일일 한도 상향 승인을 기다리고 있습니다. 한도 초과 시 번역 결과는 저장되며, 다음 날 다시 시작하면 추가 비용 없이 자동 등록됩니다.</span>
     </div>
 
     <div class="s-mode-strip" id="mode-strip">
