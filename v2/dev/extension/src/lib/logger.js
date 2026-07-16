@@ -11,11 +11,9 @@
 // 설정
 // =============================================
 
-const LOG_WORKER_URL  = 'https://yt-auto-translator-logger.1009yjh.workers.dev/';
-const LOG_SECRET      = 'YT_TRANSLATOR_SECRET';
+import { API_BASE } from './constants.js';
+
 const MAX_LOG_ENTRIES = 200;
-const WORKER_TIMEOUT  = 8000;  // Worker 요청 타임아웃 (ms)
-const WORKER_RETRIES  = 2;     // 실패 시 최대 재시도 횟수
 
 // =============================================
 // 로그 레벨
@@ -93,14 +91,7 @@ export async function reportError(error, context = {}) {
 
   await log(message, LOG_LEVEL.ERROR, context);
 
-  await sendToWorker({
-    type:      'general_error',
-    timestamp: new Date().toISOString(),
-    level:     LOG_LEVEL.ERROR,
-    message,
-    stack,
-    ...context   // action, currentLang 등 추가 컨텍스트
-  });
+  await sendToOps({ message, stack, action: context.action, at: context.source });
 }
 
 /**
@@ -109,13 +100,11 @@ export async function reportError(error, context = {}) {
 export async function reportTranslationResult({ videoId, errors, total, success }) {
   if (!errors?.length) return;
 
-  await sendToWorker({
-    type:      'translation_error',
-    timestamp: new Date().toISOString(),
-    videoId,
-    errors,
-    total,
-    success
+  // 개별 언어 실패 요약 (PII 제외 — 영상제목·자막 미포함)
+  await sendToOps({
+    message: `번역 부분 실패 ${errors.length}/${total} (성공 ${success})`,
+    tag: 'translation_result',
+    action: 'translation_result',
   });
 }
 
@@ -133,46 +122,39 @@ export async function clearLogs() {
 }
 
 // =============================================
-// 내부: Cloudflare Worker 전송
+// 내부: 백엔드 /ops/errors 전송 (저장 + 지문 집계 + 신규만 텔레그램)
 // =============================================
 
-/**
- * Worker로 페이로드 전송
- *
- * - keepalive: true  → Service Worker 종료 후에도 요청 완료 보장
- * - AbortController → 타임아웃 처리
- * - 재시도           → 최대 WORKER_RETRIES회 (2초 간격)
- */
-async function sendToWorker(payload, attempt = 0) {
-  if (LOG_WORKER_URL.includes('YOUR_SUBDOMAIN')) return;
+// 오류 지문 — 같은 유형을 묶기 위해 메시지/스택을 정규화해 해시(숫자·URL·긴ID 제거)
+function fingerprintOf(message, stack, tag) {
+  const norm = String(message || '')
+    .replace(/https?:\/\/[^\s)]+/g, 'URL')
+    .replace(/\b[0-9a-f]{8,}\b/gi, 'ID')
+    .replace(/\d+/g, 'N')
+    .slice(0, 200);
+  const frame = String(stack || '').split('\n')[1]?.replace(/:\d+:\d+/g, '').trim().slice(0, 120) || '';
+  const raw = (tag || '') + '|' + norm + '|' + frame;
+  let h = 5381;
+  for (let i = 0; i < raw.length; i++) h = ((h << 5) + h + raw.charCodeAt(i)) >>> 0;
+  return 'e' + h.toString(16);
+}
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), WORKER_TIMEOUT);
-
+// PII 스크럽: message는 앞부분만, context는 안전 필드(action/at)만 전송.
+async function sendToOps({ message, stack, tag, action, at }) {
   try {
-    const res = await fetch(LOG_WORKER_URL, {
-      method:   'POST',
-      headers:  { 'Content-Type': 'application/json', 'X-Log-Secret': LOG_SECRET },
-      body:     JSON.stringify(payload),
-      keepalive: true,           // ← Service Worker 생명주기와 무관하게 전송 완료
-      signal:   controller.signal
+    await fetch(`${API_BASE}/ops/errors`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      keepalive: true,   // SW 종료 후에도 전송 완료
+      body: JSON.stringify({
+        source:      'extension',
+        version:     chrome.runtime.getManifest().version,
+        fingerprint: fingerprintOf(message, stack, tag),
+        message:     String(message || '').slice(0, 500),
+        context:     { action: action || undefined, at: at || undefined },
+      }),
     });
-    clearTimeout(timer);
-
-    if (!res.ok && attempt < WORKER_RETRIES) {
-      await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
-      return sendToWorker(payload, attempt + 1);
-    }
-
-  } catch (e) {
-    clearTimeout(timer);
-    if (attempt < WORKER_RETRIES) {
-      await new Promise(r => setTimeout(r, 2000 * (attempt + 1)));
-      return sendToWorker(payload, attempt + 1);
-    }
-    // 최종 실패는 조용히 처리 (에러 알림 실패로 또 다른 에러 유발 방지)
-    console.warn('[YT-Translator] Worker 전송 최종 실패:', e.message);
-  }
+  } catch { /* 전송 실패는 조용히 — 에러 알림 실패로 또 다른 에러 유발 방지 */ }
 }
 
 // Sentry 초기화 (레거시 호환 - 현재 미사용)
