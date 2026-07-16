@@ -26,6 +26,21 @@ app.post('/session', async (c) => {
     .single();
   const isAdmin = !!admin;
 
+  // 기존 유효 세션 재사용 — 매 방문마다 새 토큰을 만들지 않아 토큰 남발·유효토큰 수(공격 표면)·테이블 비대를 줄임
+  const nowIso = new Date().toISOString();
+  const { data: existing } = await sb
+    .from('admin_sessions')
+    .select('token')
+    .eq('user_id', userId)
+    .gt('expires_at', nowIso)
+    .order('expires_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (existing?.token) {
+    return c.json({ session_token: existing.token, is_admin: isAdmin, email });
+  }
+
   const token = newSessionToken();
   const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
 

@@ -23,9 +23,10 @@ router.post('/apply', async (c) => {
   if (me.referred_by) return c.json({ error: 'ALREADY_SET' }, 409);
 
   // 코드로 추천인 조회
-  const { data: referrer } = await sb.from('users').select('id').eq('referral_code', code).single();
+  const { data: referrer } = await sb.from('users').select('id, referred_by').eq('referral_code', code).single();
   if (!referrer) return c.json({ error: 'INVALID_CODE' }, 404);
-  if (referrer.id === userId) return c.json({ error: 'SELF_REFERRAL' }, 400);
+  if (referrer.id === userId) return c.json({ error: 'SELF_REFERRAL' }, 400);      // 자기 자신 불가
+  if (referrer.referred_by === userId) return c.json({ error: 'CIRCULAR_REFERRAL' }, 400); // 맞추천(A↔B) 불가
 
   const { error } = await sb.from('users')
     .update({ referred_by: referrer.id, referred_at: new Date().toISOString() })
@@ -47,9 +48,11 @@ router.get('/', async (c) => {
   if (!code) {
     for (let i = 0; i < 2 && !code; i++) {
       const candidate = genReferralCode();
-      const { error } = await sb.from('users')
-        .update({ referral_code: candidate }).eq('id', userId).is('referral_code', null);
-      if (!error) code = candidate;
+      // .select()로 실제 갱신 행을 확인 — 동시요청으로 0행 갱신 시 candidate를 확정하지 않음(경합 방지)
+      const { data: upd, error } = await sb.from('users')
+        .update({ referral_code: candidate }).eq('id', userId).is('referral_code', null)
+        .select('referral_code');
+      if (!error && upd && upd.length > 0) code = candidate;
     }
     // 경합으로 이미 생성됐을 수 있으니 재조회
     if (!code) { const { data: re } = await sb.from('users').select('referral_code').eq('id', userId).single(); code = re?.referral_code; }
@@ -85,19 +88,26 @@ router.post('/accrue', async (c) => {
   return c.json({ ok: true, date, accrued: data });
 });
 
-// KST 기준 "어제" 날짜(YYYY-MM-DD)
-export function yesterdayKST() {
+// KST 기준 N일 전 날짜(YYYY-MM-DD)
+function kstDateBack(days) {
   const kst = new Date(Date.now() + 9 * 3600 * 1000);
-  kst.setUTCDate(kst.getUTCDate() - 1);
+  kst.setUTCDate(kst.getUTCDate() - days);
   return kst.toISOString().slice(0, 10);
 }
+export function yesterdayKST() { return kstDateBack(1); }
 
-// 크론용: 어제분 적립 실행
+// 크론용(매일 KST 00:00 = UTC 15:00 실행): 최근 3일 재계산 + 만료 세션 정리
+// - accrue는 멱등(unique referee+date)이라 이미 적립된 날은 건너뜀 → 배포/장애로 밤을 놓쳐도
+//   다음 실행이 놓친 날(최대 2일 전까지)을 자동 catch-up.
 export async function runReferralAccrual(env) {
   const sb = getSupabase(env);
-  const date = yesterdayKST();
-  const { error } = await sb.rpc('accrue_referral_rewards', { p_date: date });
-  if (error) console.error('[referral accrual]', error.message);
+  for (let back = 1; back <= 3; back++) {
+    const date = kstDateBack(back);
+    const { error } = await sb.rpc('accrue_referral_rewards', { p_date: date });
+    if (error) console.error('[referral accrual]', date, error.message);
+  }
+  // 만료 세션 정리 (#1 보완 — admin_sessions 비대·유효토큰 누적 방지)
+  await sb.from('admin_sessions').delete().lt('expires_at', new Date().toISOString());
 }
 
 export default router;
