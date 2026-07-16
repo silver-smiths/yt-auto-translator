@@ -10,6 +10,7 @@ import adminRouter     from './routes/admin.js';
 import authRouter      from './routes/auth.js';
 import geminiRelayRouter from './routes/gemini-relay.js';
 import opsRouter, { runAutoHeal } from './routes/ops.js';
+import referralRouter, { runReferralAccrual } from './routes/referral.js';
 
 const app = new Hono();
 
@@ -45,8 +46,12 @@ app.on(['POST', 'PATCH', 'DELETE'], ['/notices', '/notices/*'],
 app.on(['PATCH'], ['/ops/config'], authMiddleware, adminMiddleware);
 app.on(['POST'], ['/ops/autoheal/run'], authMiddleware, adminMiddleware);
 
+// 추천 적립 수동 실행만 관리자 보호(나머지 /referral/*는 아래 authMiddleware)
+app.on(['POST'], ['/referral/accrue'], authMiddleware, adminMiddleware);
+
 // ── 인증 필요 라우트 ──────────────────────────────────────
 app.use('/auth/*',            authMiddleware); // Google 토큰 → 세션 토큰 교환
+app.use('/referral/*',        authMiddleware);
 app.use('/credits/*',         authMiddleware);
 app.use('/translate/*',       authMiddleware);
 app.use('/admin/*',           authMiddleware, adminMiddleware);
@@ -57,6 +62,7 @@ app.route('/translate', translateRouter);
 app.route('/admin',     adminRouter);
 app.route('/notices',   noticesRouter);
 app.route('/ops',       opsRouter);
+app.route('/referral',  referralRouter);
 
 // ── 404 ───────────────────────────────────────────────────
 app.notFound((c) => c.json({ error: 'NOT_FOUND' }, 404));
@@ -71,7 +77,13 @@ app.onError((err, c) => {
 
 // Cloudflare Cron Trigger → 자동 완화 워처 (Vercel은 fetch만 사용, scheduled 무시)
 async function scheduled(event, env, ctx) {
-  ctx.waitUntil(runAutoHeal(env).catch(e => console.error('[autoheal]', e)));
+  if (event.cron === '0 15 * * *') {
+    // 매일 KST 00:00 (UTC 15:00) — 전일 소진분 추천 페이백 적립
+    ctx.waitUntil(runReferralAccrual(env).catch(e => console.error('[referral]', e)));
+  } else {
+    // 5분마다 — 자가수복 워처
+    ctx.waitUntil(runAutoHeal(env).catch(e => console.error('[autoheal]', e)));
+  }
 }
 
 export default {

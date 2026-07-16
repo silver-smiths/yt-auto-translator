@@ -19,6 +19,25 @@
 
 ---
 
+## ★ R. 추천인 기능 (크레딧 페이백, 출금 없음) — 필수
+**확정 모델**: 피추천인 **소진액의 10%**를 **추천인 크레딧으로** 적립. **현금 출금 없음**(→ 세무·주민번호·정산 부담 회피). 크레딧은 만료 없음.
+- **적립 기간**: 피추천인 추천연결(referred_at) 후 **12개월**간의 소진분만 (엄밀히 "가입 후"로 하려면 users.created_at 사용 — 스키마 확인 필요)
+- **적립 방식**: **하루 1회 배치**(Cloudflare Cron)로 전일 소진 합산 × 10% → 추천인 잔액 적립
+- **추천 연결**: 피추천인이 **추천인 이메일 입력** → `users`에 email 있으므로 조회 가능(추천인은 최소 1회 로그인 필요). 1회 설정·불변, 본인 이메일 불가
+- **어뷰징**: 자기/순환추천 허용(소진 기준이라 실지출 필요 = 무이익). 현금 경로 없어 리스크 낮음
+- **표시**: 익스텐션에 누적 적립·피추천 수·이력. 본인 로그인 이메일 = 추천 코드(커뮤니티에 이메일 공유)
+
+**구현 요소**
+- [ ] 마이그레이션: `users.referred_by/referred_at`, `referral_rewards` 원장(멱등: referee+date 유일), `credit_transactions.type`에 `referral_payback` 허용
+- [ ] `accrue_referral_rewards(date)` 함수 + 일일 크론(`scheduled`에 daily 추가, event.cron 분기)
+- [ ] `POST /referral/apply`(피추천인 세션 + 추천인 이메일 검증·연결)
+- [ ] 결제페이지/익스텐션에 추천인 이메일 입력 + 익스텐션에 적립 현황 표시
+
+**구현 전 확인 필요(스키마)**: ① `users`에 `created_at` 있는지(12개월 기산점) ② `credit_transactions` 컬럼 구성(balance_before/after NOT NULL 여부)·type CHECK 제약. → 확정 후 정확한 SQL 작성.
+**법무(경량)**: 크레딧 리워드라 부담 작지만 약관에 적립·부정적립 회수 조건은 명시 권장.
+
+---
+
 ## ⓪ 배포·검증 (완성분을 실제 작동시키기)
 **해야 하는 것**
 - [ ] Supabase 마이그레이션 실행 순서대로: `006_deduct_credits_idempotent` → `007_ops_error_tracking_and_config` → `008_ops_autoheal`

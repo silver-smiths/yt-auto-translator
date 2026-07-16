@@ -6,9 +6,9 @@ compatibility_flags = ["nodejs_compat"]
 [placement]
 mode = "smart"
 
-# 자가수복 워처 — 5분마다 오류율 점검 후 자동 완화 (scheduled 핸들러)
+# 자가수복 워처(5분) + 추천 페이백 일일 적립(KST 00:00 = UTC 15:00) — scheduled 핸들러가 event.cron으로 분기
 [triggers]
-crons = ["*/5 * * * *"]
+crons = ["*/5 * * * *", "0 15 * * *"]
 
 [observability]
 enabled = true
