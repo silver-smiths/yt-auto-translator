@@ -1,9 +1,11 @@
 -- 추천인 크레딧 페이백(원안, 출금 없음): 피추천인 소진액 10%를 추천인 크레딧으로 일일 적립
 -- 재실행 안전. 007/008과 독립.
 
--- 추천 연결 (피추천인 → 추천인). 1회 설정·불변.
+-- 추천 코드(공유용, 링크 ?ref=CODE) + 추천 연결(피추천인 → 추천인, 1회·불변)
+alter table public.users add column if not exists referral_code text;
 alter table public.users add column if not exists referred_by uuid references public.users(id);
 alter table public.users add column if not exists referred_at timestamptz;
+create unique index if not exists idx_users_referral_code on public.users(referral_code) where referral_code is not null;
 create index if not exists idx_users_referred_by on public.users(referred_by);
 
 -- 일일 적립 원장 (멱등: 피추천인+날짜 유일 → 배치 재실행해도 중복 적립 없음)

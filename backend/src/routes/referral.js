@@ -3,25 +3,28 @@ import { getSupabase } from '../lib/supabase.js';
 
 const router = new Hono();
 
-// ── 피추천인이 추천인 이메일로 연결 (1회·불변·본인 불가) ──
+function genReferralCode() {
+  return crypto.randomUUID().replace(/-/g, '').slice(0, 8); // 8자 (링크용, 타이핑 대상 아님)
+}
+
+// ── 피추천인이 추천 코드로 연결 (1회·불변·본인 불가) ──
 router.post('/apply', async (c) => {
   const userId = c.get('userId');
   let body;
   try { body = await c.req.json(); } catch { return c.json({ error: 'BAD_JSON' }, 400); }
-  const email = String(body.referrer_email || '').trim().toLowerCase();
-  if (!email) return c.json({ error: 'MISSING_EMAIL' }, 400);
+  const code = String(body.code || '').trim();
+  if (!code) return c.json({ error: 'MISSING_CODE' }, 400);
 
   const sb = getSupabase(c.env);
 
   // 이미 연결돼 있으면 거부(불변)
-  const { data: me } = await sb.from('users').select('id, email, referred_by').eq('id', userId).single();
+  const { data: me } = await sb.from('users').select('id, referred_by').eq('id', userId).single();
   if (!me) return c.json({ error: 'USER_NOT_FOUND' }, 404);
   if (me.referred_by) return c.json({ error: 'ALREADY_SET' }, 409);
-  if (String(me.email || '').toLowerCase() === email) return c.json({ error: 'SELF_REFERRAL' }, 400);
 
-  // 추천인 조회(로그인 이력이 있어야 존재)
-  const { data: referrer } = await sb.from('users').select('id').ilike('email', email).single();
-  if (!referrer) return c.json({ error: 'REFERRER_NOT_FOUND' }, 404);
+  // 코드로 추천인 조회
+  const { data: referrer } = await sb.from('users').select('id').eq('referral_code', code).single();
+  if (!referrer) return c.json({ error: 'INVALID_CODE' }, 404);
   if (referrer.id === userId) return c.json({ error: 'SELF_REFERRAL' }, 400);
 
   const { error } = await sb.from('users')
@@ -33,11 +36,24 @@ router.post('/apply', async (c) => {
   return c.json({ ok: true });
 });
 
-// ── 추천인 본인 현황(익스텐션 표시용): 내 코드(이메일)·누적 적립·피추천 수·최근 이력 ──
+// ── 추천인 본인 현황(익스텐션 표시용): 내 추천 코드·누적 적립·피추천 수·최근 이력 ──
 router.get('/', async (c) => {
   const userId = c.get('userId');
-  const email  = c.get('email') || '';
   const sb = getSupabase(c.env);
+
+  // 추천 코드가 없으면 생성(최초 조회 시). 희박한 충돌은 1회 재시도.
+  const { data: u } = await sb.from('users').select('referral_code').eq('id', userId).single();
+  let code = u?.referral_code;
+  if (!code) {
+    for (let i = 0; i < 2 && !code; i++) {
+      const candidate = genReferralCode();
+      const { error } = await sb.from('users')
+        .update({ referral_code: candidate }).eq('id', userId).is('referral_code', null);
+      if (!error) code = candidate;
+    }
+    // 경합으로 이미 생성됐을 수 있으니 재조회
+    if (!code) { const { data: re } = await sb.from('users').select('referral_code').eq('id', userId).single(); code = re?.referral_code; }
+  }
 
   const { data: rewards } = await sb.from('referral_rewards')
     .select('referee_id, amount_krw, reward_date')
@@ -50,7 +66,7 @@ router.get('/', async (c) => {
   const refereeCount = new Set(rows.map(r => r.referee_id)).size;
 
   return c.json({
-    referral_code: email,            // 로그인 이메일이 곧 추천 코드
+    referral_code: code || null,     // 공유 링크: PAYMENT_URL?ref=<code> (익스텐션에서 조합)
     total_earned: Math.round(totalEarned),
     referee_count: refereeCount,     // 최근 60건 기준(대략치)
     recent: rows.slice(0, 20).map(r => ({ date: r.reward_date, amount: Math.round(Number(r.amount_krw || 0)) })),
