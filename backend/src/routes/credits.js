@@ -11,14 +11,19 @@ app.get('/', async (c) => {
 
   const { data, error } = await sb
     .from('credit_accounts')
-    .select('balance, cumulative_used')
+    .select('balance, referral_balance, cumulative_used')
     .eq('user_id', userId)
     .single();
 
   if (error) return c.json({ error: 'SERVER_ERROR' }, 500);
 
+  const paid     = parseFloat(data.balance);
+  const referral = parseFloat(data.referral_balance || 0);
+
   return c.json({
-    balance:         parseFloat(data.balance),
+    balance:         paid + referral,   // 표시·검사용 합계(유료+추천)
+    paid_balance:    paid,              // 유료분(먼저 소진)
+    referral_balance: referral,         // 추천 적립분(유료 소진 후 사용)
     cumulative_used: parseFloat(data.cumulative_used),
     // 익스텐션의 시작 전 비용 추정용 단가 (apiCostUsd × multiplier = 크레딧(원))
     pricing: {

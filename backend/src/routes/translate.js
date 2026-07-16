@@ -235,11 +235,11 @@ app.post('/chunk', async (c) => {
   // 시작된 작업이 잔액 소진 직후 끊기지 않도록 OVERDRAFT_CREDITS만큼 초과 허용 (초과분은 마이너스 잔액으로 차감됨)
   const { data: account } = await sb
     .from('credit_accounts')
-    .select('balance')
+    .select('balance, referral_balance')
     .eq('user_id', userId)
     .single();
 
-  if (!account || account.balance + OVERDRAFT_CREDITS <= (job.credits_charged || 0)) {
+  if (!account || (account.balance + (account.referral_balance || 0)) + OVERDRAFT_CREDITS <= (job.credits_charged || 0)) {
     return c.json({ error: 'INSUFFICIENT_CREDITS' }, 402);
   }
 
@@ -319,11 +319,11 @@ app.post('/job', async (c) => {
   // 잔액이 0 이하(마이너스 부채 포함)면 새 작업 시작 거부 — overdraft 반복 악용 차단
   const { data: account } = await sb
     .from('credit_accounts')
-    .select('balance')
+    .select('balance, referral_balance')
     .eq('user_id', userId)
     .single();
 
-  if (!account || account.balance <= 0) {
+  if (!account || (account.balance + (account.referral_balance || 0)) <= 0) {
     return c.json({ error: 'INSUFFICIENT_CREDITS' }, 402);
   }
   const { data, error } = await sb
