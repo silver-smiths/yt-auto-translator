@@ -210,6 +210,40 @@ document.getElementById('btnFeedback').addEventListener('click', (e) => {
   }
 });
 
+// ── 친구 추천 ─────────────────────────────────────────────────────────────────
+async function renderReferral() {
+  const box = document.getElementById('referralBody');
+  if (!box) return;
+  let res;
+  try { res = await chrome.runtime.sendMessage({ type: 'GET_REFERRAL' }); }
+  catch { box.textContent = '추천 정보를 불러오지 못했습니다.'; return; }
+
+  const r = res?.referral;
+  if (!r || !r.referral_code) {
+    box.textContent = '로그인 후 이용할 수 있습니다. (사이드바에서 번역을 한 번 시작하면 계정·코드가 생성됩니다)';
+    return;
+  }
+  const link = `${PAYMENT_URL}?ref=${encodeURIComponent(r.referral_code)}`;
+  box.innerHTML = `
+    <div style="margin-bottom:6px;">내 추천 링크</div>
+    <div style="display:flex; gap:6px;">
+      <input id="refLink" class="date-input" style="flex:1; min-width:0;" readonly>
+      <button class="btn" id="btnCopyRef" type="button">복사</button>
+    </div>
+    <div style="margin-top:10px; display:flex; gap:18px;">
+      <div>누적 적립 <strong>${(r.total_earned || 0).toLocaleString('ko-KR')} 크레딧</strong></div>
+      <div>추천 <strong>${r.referee_count || 0}명</strong></div>
+    </div>`;
+  document.getElementById('refLink').value = link; // 값은 DOM 속성으로(HTML 주입 회피)
+  document.getElementById('btnCopyRef').addEventListener('click', () => {
+    const el = document.getElementById('refLink');
+    el.select();
+    navigator.clipboard?.writeText(el.value).catch(() => {});
+    const b = document.getElementById('btnCopyRef');
+    b.textContent = '복사됨'; setTimeout(() => { b.textContent = '복사'; }, 1500);
+  });
+}
+
 // ── 소스 언어 빌드 ────────────────────────────────────────────────────────────
 function buildSourceLang(selected) {
   sourceLang.innerHTML = '<option value="auto">자동 감지 (영상 기본 언어 자동 인식)</option>';
@@ -339,6 +373,7 @@ async function init() {
 
   buildSourceLang(settings.sourceLang);
   buildLangGrid();
+  renderReferral();
 
   // 번역 대상
   translateSubtitlesCb.checked = settings.translateSubtitles !== false;

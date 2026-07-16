@@ -39,6 +39,12 @@ export async function fetchCredits(interactive = true) {
   return res.json(); // { balance, tier, multiplier }
 }
 
+export async function fetchReferral(interactive = false) {
+  const res = await authFetch(`${API_BASE}/referral`, {}, interactive);
+  if (!res.ok) throw new Error(`REFERRAL_FETCH_FAILED_${res.status}`);
+  return res.json(); // { referral_code, total_earned, referee_count, recent }
+}
+
 export async function createTranslationJob(params) {
   const res = await authFetch(`${API_BASE}/translate/job`, {
     method:  'POST',

@@ -14,6 +14,7 @@ import {
 } from '../lib/youtube-api.js';
 import {
   fetchCredits,
+  fetchReferral,
   createCheckout,
   createTranslationJob,
   translateChunk,
@@ -841,6 +842,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
       .then(data => sendResponse({ notices: data.notices || [] }))
       .catch(err => sendResponse({ notices: null, error: err.message }));
+    return true;
+  }
+
+  // 추천 현황(옵션 페이지 표시용) — 비대화형(팝업 없음)
+  if (message.type === 'GET_REFERRAL') {
+    fetchReferral(false)
+      .then(data => sendResponse({ referral: data }))
+      .catch(err => sendResponse({ referral: null, error: err.message }));
     return true;
   }
 
