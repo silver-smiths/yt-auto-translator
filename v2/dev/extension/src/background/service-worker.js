@@ -354,9 +354,43 @@ async function translateAndUploadMetadataCredits(videoId, snippet, targetLangs, 
   }
 }
 
+// ── 원격 설정(kill-switch) 조회 — 60초 캐시 ────────────────────────────────────
+let _appConfig = { value: null, ts: 0 };
+async function getAppConfig() {
+  const now = Date.now();
+  if (_appConfig.value && now - _appConfig.ts < 60000) return _appConfig.value;
+  try {
+    const res = await fetch(`${API_BASE}/ops/config`);
+    if (res.ok) _appConfig = { value: await res.json(), ts: now };
+  } catch { /* 실패 시 직전 캐시 사용 */ }
+  return _appConfig.value || {};
+}
+
 // ── 크레딧 경로 (v2 신규) ──────────────────────────────────────────────────────
 
 async function runTranslationCredits(tabId, settings) {
+  // 원격 스위치 반영 — 백엔드 app_config (마스터/자막/메타/언어별 비활성)
+  const cfg = await getAppConfig();
+  if (cfg['translate.enabled'] === false) {
+    broadcast({
+      type: MSG.TRANSLATION_ERROR,
+      error: '번역 기능이 일시 점검 중입니다.',
+      record: { ts: nowISO(), videoId: '', videoTitle: '번역', items: [], failCount: 1,
+                errorText: '번역 기능이 일시 점검 중입니다. 잠시 후 다시 시도해 주세요.' },
+    }, tabId);
+    return;
+  }
+  const disabledLangs = new Set(Array.isArray(cfg['lang.disabled']) ? cfg['lang.disabled'] : []);
+  const cfgSubs = cfg['translate.subtitles.enabled'] !== false;
+  const cfgMeta = cfg['translate.metadata.enabled'] !== false;
+  settings = {
+    ...settings,
+    translateSubtitles:   settings.translateSubtitles !== false && cfgSubs,
+    translateTitle:       !!settings.translateTitle && cfgMeta,
+    translateDescription: !!settings.translateDescription && cfgMeta,
+    targetLangs:          (settings.targetLangs || []).filter(c => !disabledLangs.has(c)),
+  };
+
   state = {
     isRunning: true, shouldStop: false, currentLang: null,
     tabId, targetLangs: settings.targetLangs,
@@ -803,6 +837,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
       .then(data => sendResponse({ notices: data.notices || [] }))
       .catch(err => sendResponse({ notices: null, error: err.message }));
+    return true;
+  }
+
+  // 원격 설정(kill-switch/배너) — 사이드바가 폴링
+  if (message.type === 'GET_CONFIG') {
+    getAppConfig()
+      .then(cfg => sendResponse({ config: cfg }))
+      .catch(() => sendResponse({ config: {} }));
     return true;
   }
 

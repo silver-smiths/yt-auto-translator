@@ -14,6 +14,15 @@ const CSS = `
   font-size: 12px;
 }
 
+/* ── 원격 배너 (kill-switch/공지 배너) ── */
+.s-remote-banner {
+  flex-shrink: 0; padding: 8px 14px; font-size: 11.5px; line-height: 1.45;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.s-remote-banner.info     { background: rgba(187,134,252,0.12); color: #d3b6ff; }
+.s-remote-banner.warn     { background: rgba(255,183,77,0.14);  color: #ffcb70; }
+.s-remote-banner.critical { background: rgba(207,102,121,0.16); color: #ff9aab; }
+
 /* ── 접힌 탭 ── */
 .toggle-tab {
   position: absolute; top: 50%; transform: translateY(-50%);
@@ -352,6 +361,8 @@ let isRunning = false;
 let settings = null;
 let creditBalance = null;
 let creditAuthNeeded = false; // 미로그인 상태(비대화형 조회 실패) — 모드 스트립에 "로그인 필요" 표시
+let serviceDisabled = false;  // 원격 스위치: 번역 전체 중단
+let paymentDisabled = false;  // 원격 스위치: 결제/충전 중단
 let langChipState = {}; // code → 'pending'|'active'|'done'
 let visibilityListenerAttached = false;
 
@@ -376,6 +387,7 @@ export async function mount() {
   loadCreditBalance();
   setupMessageListener();
   restoreRunningState(); // 이미 진행 중인 번역이 있으면 진행 UI 복원 ("이미 진행 중" 데드엔드 방지)
+  loadRemoteConfig(); // 원격 스위치/배너 적용
   loadHistory(); // 저장된 처리 이력 복원 (최대 100건)
   loadNotices(); // 공지 영역에 공지 목록 표시 (클릭 시 본문 펼침)
 
@@ -385,7 +397,7 @@ export async function mount() {
     document.addEventListener('visibilitychange', () => {
       // 익스텐션 리로드로 컨텍스트가 무효화된 경우 (chrome.runtime.id 소멸) 조용히 무시
       if (!chrome.runtime?.id) return;
-      if (document.visibilityState === 'visible' && !isRunning) loadCreditBalance();
+      if (document.visibilityState === 'visible' && !isRunning) { loadCreditBalance(); loadRemoteConfig(); }
     });
 
     // 설정(언어·번역 대상 등) 변경을 실시간 반영 — 옵션 페이지에서 저장 시 즉시 갱신.
@@ -455,6 +467,8 @@ function buildSidebarHTML() {
       </div>
       <button class="strip-btn" id="btn-topup" style="display:none">충전</button>
     </div>
+
+    <div class="s-remote-banner" id="remote-banner" style="display:none"></div>
 
     <div class="s-control">
       <button class="btn-start" id="btn-translate">▶&nbsp; 번역 시작</button>
@@ -578,6 +592,35 @@ function bindSidebarEvents(sidebar) {
   });
 }
 
+// ── 원격 설정(kill-switch/배너) 적용 ──────────────────────────────────────────
+async function loadRemoteConfig() {
+  let cfg = {};
+  try {
+    const res = await chrome.runtime.sendMessage({ type: 'GET_CONFIG' });
+    cfg = res?.config || {};
+  } catch { /* 실패 시 기본(전부 켜짐)으로 간주 */ }
+
+  serviceDisabled = cfg['translate.enabled'] === false;
+  paymentDisabled = cfg['payment.enabled'] === false;
+
+  // 배너: 서비스 중단이 우선, 없으면 원격 배너 메시지
+  const bannerEl = shadow.getElementById('remote-banner');
+  if (bannerEl) {
+    let msg = '', level = 'info';
+    if (serviceDisabled) { msg = '⚙️ 번역 기능이 일시 점검 중입니다.'; level = 'warn'; }
+    else if (cfg.banner && cfg.banner.message) { msg = String(cfg.banner.message); level = cfg.banner.level || 'info'; }
+    if (msg) {
+      bannerEl.className = `s-remote-banner ${level}`;
+      bannerEl.textContent = msg;
+      bannerEl.style.display = '';
+    } else {
+      bannerEl.style.display = 'none';
+    }
+  }
+
+  updateModeStrip(); // 시작/충전 버튼 상태 반영
+}
+
 // ── 모드 스트립 업데이트 ──────────────────────────────────────────────────────
 function updateModeStrip() {
   const strip    = shadow.getElementById('mode-strip');
@@ -595,17 +638,17 @@ function updateModeStrip() {
     label.textContent = '로그인 필요';
     value.textContent = '번역 시작 시 로그인';
     btnTopup.style.display = 'none';
-    btnTrans.disabled = false;
+    btnTrans.disabled = serviceDisabled;
     return;
   }
 
   strip.className = `s-mode-strip credits${isLow ? ' low' : ''}`;
   label.textContent = isLow ? '크레딧 부족' : '크레딧';
   value.textContent = creditBalance != null ? formatCredits(balance) : '로딩 중...';
-  btnTopup.style.display = 'block';
-  // 버튼은 잠그지 않음 — 저장된 번역 재업로드는 크레딧 없이 가능하고,
-  // 실제 부족 여부는 시작 시 SW가 판단해 상황별 안내를 표시함
-  btnTrans.disabled = false;
+  btnTopup.style.display = paymentDisabled ? 'none' : 'block';
+  // 원격 스위치로 서비스 중단 시에만 잠금. 평소엔 잠그지 않음
+  // (저장된 번역 재업로드는 크레딧 없이 가능하고, 실제 부족 여부는 시작 시 SW가 판단)
+  btnTrans.disabled = serviceDisabled;
 }
 
 // ── 크레딧 잔액 조회 ──────────────────────────────────────────────────────────
