@@ -9,7 +9,7 @@ import noticesRouter   from './routes/notices.js';
 import adminRouter     from './routes/admin.js';
 import authRouter      from './routes/auth.js';
 import geminiRelayRouter from './routes/gemini-relay.js';
-import opsRouter         from './routes/ops.js';
+import opsRouter, { runAutoHeal } from './routes/ops.js';
 
 const app = new Hono();
 
@@ -41,8 +41,9 @@ app.use('/notices/admin/*', authMiddleware, adminMiddleware);
 app.on(['POST', 'PATCH', 'DELETE'], ['/notices', '/notices/*'],
   authMiddleware, adminMiddleware);
 
-// ── Ops: 설정 변경(PATCH)만 관리자 보호. POST /ops/errors·GET /ops/config는 공개 ──
+// ── Ops: 설정 변경·워처 수동실행은 관리자 보호. POST /ops/errors·GET /ops/config는 공개 ──
 app.on(['PATCH'], ['/ops/config'], authMiddleware, adminMiddleware);
+app.on(['POST'], ['/ops/autoheal/run'], authMiddleware, adminMiddleware);
 
 // ── 인증 필요 라우트 ──────────────────────────────────────
 app.use('/auth/*',            authMiddleware); // Google 토큰 → 세션 토큰 교환
@@ -68,4 +69,12 @@ app.onError((err, c) => {
   }, 500);
 });
 
-export default app;
+// Cloudflare Cron Trigger → 자동 완화 워처 (Vercel은 fetch만 사용, scheduled 무시)
+async function scheduled(event, env, ctx) {
+  ctx.waitUntil(runAutoHeal(env).catch(e => console.error('[autoheal]', e)));
+}
+
+export default {
+  fetch: (request, env, ctx) => app.fetch(request, env, ctx),
+  scheduled,
+};

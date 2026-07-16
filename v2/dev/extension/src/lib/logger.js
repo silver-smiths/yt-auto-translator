@@ -91,7 +91,8 @@ export async function reportError(error, context = {}) {
 
   await log(message, LOG_LEVEL.ERROR, context);
 
-  await sendToOps({ message, stack, action: context.action, at: context.source });
+  await sendToOps({ message, stack, action: context.action, at: context.source,
+                    feature: context.feature, lang: context.lang });
 }
 
 /**
@@ -105,6 +106,7 @@ export async function reportTranslationResult({ videoId, errors, total, success 
     message: `번역 부분 실패 ${errors.length}/${total} (성공 ${success})`,
     tag: 'translation_result',
     action: 'translation_result',
+    feature: 'subtitles',
   });
 }
 
@@ -139,8 +141,19 @@ function fingerprintOf(message, stack, tag) {
   return 'e' + h.toString(16);
 }
 
-// PII 스크럽: message는 앞부분만, context는 안전 필드(action/at)만 전송.
-async function sendToOps({ message, stack, tag, action, at }) {
+// 익명 설치 ID — 영향 사용자 수 집계용(PII 아님, 무작위). storage.local에 1회 생성·보관.
+async function getAnonId() {
+  try {
+    const r = await chrome.storage.local.get('anonId');
+    if (r.anonId) return r.anonId;
+    const id = 'a_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+    await chrome.storage.local.set({ anonId: id });
+    return id;
+  } catch { return ''; }
+}
+
+// PII 스크럽: message는 앞부분만, context는 안전 필드(action/at/feature/lang)만 전송.
+async function sendToOps({ message, stack, tag, action, at, feature, lang }) {
   try {
     await fetch(`${API_BASE}/ops/errors`, {
       method:  'POST',
@@ -151,7 +164,9 @@ async function sendToOps({ message, stack, tag, action, at }) {
         version:     chrome.runtime.getManifest().version,
         fingerprint: fingerprintOf(message, stack, tag),
         message:     String(message || '').slice(0, 500),
-        context:     { action: action || undefined, at: at || undefined },
+        anon_hash:   await getAnonId(),
+        context:     { action: action || undefined, at: at || undefined,
+                       feature: feature || undefined, lang: lang || undefined },
       }),
     });
   } catch { /* 전송 실패는 조용히 — 에러 알림 실패로 또 다른 에러 유발 방지 */ }

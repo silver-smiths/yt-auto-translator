@@ -75,4 +75,73 @@ router.patch('/config', async (c) => {
   return c.json({ ok: true });
 });
 
+// ── 자동 완화 워처 (Phase 2) ─────────────────────────────
+// 최근 창(window) 내 feature별 오류 급증 감지 → 자동 플립(자막/메타만) 또는 알림(결제/마스터).
+// 가드레일: 결제·마스터는 자동 플립 안 함(알림만), 자동 재활성 없음(플래핑 방지), 쿨다운 적용.
+const FEATURE_SWITCH = {
+  subtitles: 'translate.subtitles.enabled',
+  metadata:  'translate.metadata.enabled',
+};
+
+export async function runAutoHeal(env) {
+  const sb = getSupabase(env);
+
+  const { data: cfgRows } = await sb.from('app_config').select('key, value');
+  const cfg = {};
+  for (const r of cfgRows || []) cfg[r.key] = r.value;
+
+  const ah = cfg['ops.autoheal'] || {};
+  if (ah.enabled === false) return { skipped: 'disabled' };
+  const windowMin = ah.window_min || 15;
+  const minCount  = ah.min_count  || 20;
+  const minUsers  = ah.min_users  || 3;
+
+  const sinceIso = new Date(Date.now() - windowMin * 60000).toISOString();
+  const { data: rows } = await sb
+    .from('error_events')
+    .select('feature, anon_hash')
+    .gte('created_at', sinceIso)
+    .not('feature', 'is', null);
+
+  const byFeature = {};
+  for (const r of rows || []) {
+    const f = (byFeature[r.feature] = byFeature[r.feature] || { count: 0, users: new Set() });
+    f.count++;
+    if (r.anon_hash) f.users.add(r.anon_hash);
+  }
+
+  const actions = [];
+  for (const [feature, agg] of Object.entries(byFeature)) {
+    if (agg.count < minCount || agg.users.size < minUsers) continue;
+    const switchKey = FEATURE_SWITCH[feature];
+
+    if (!switchKey) {
+      // 결제·마스터·미지 기능 → 자동 플립 금지, 알림만
+      await notify(env, `⚠️ [YTAT/감시] '${feature}' 오류 급증 (${agg.count}건/${agg.users.size}명, ${windowMin}분). 수동 점검 권장.`);
+      await sb.from('ops_actions').insert({ action: 'auto_alert', target: feature, reason: `${agg.count}건/${agg.users.size}명` });
+      continue;
+    }
+    if (cfg[switchKey] === false) continue; // 이미 off
+
+    // 쿨다운 — 최근 창 안에 같은 스위치 자동조치 있었으면 스킵
+    const { data: recent } = await sb.from('ops_actions')
+      .select('id').eq('target', switchKey).gte('created_at', sinceIso).limit(1);
+    if (recent && recent.length) continue;
+
+    await sb.from('app_config').upsert(
+      { key: switchKey, value: false, updated_at: new Date().toISOString(), updated_by: 'autoheal' },
+      { onConflict: 'key' });
+    await sb.from('ops_actions').insert({ action: 'auto_disable', target: switchKey, reason: `${agg.count}건/${agg.users.size}명 (${windowMin}분)` });
+    await notify(env, `🔧 [YTAT/자동수복] '${feature}' 오류 급증 → \`${switchKey}\` 자동 OFF (${agg.count}건/${agg.users.size}명). 수정 후 어드민에서 재활성 필요.`);
+    actions.push(switchKey);
+  }
+  return { actions, checked: Object.keys(byFeature).length };
+}
+
+// 관리자: 워처 수동 실행(테스트/즉시 점검). index.js에서 admin 보호.
+router.post('/autoheal/run', async (c) => {
+  const result = await runAutoHeal(c.env);
+  return c.json({ ok: true, result });
+});
+
 export default router;

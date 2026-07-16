@@ -695,6 +695,10 @@ async function runTranslationCredits(tabId, settings) {
           ? '크레딧이 부족해 제목/설명 번역을 완료하지 못했습니다. ⚙️ 설정에서 충전 후 다시 시도해 주세요.'
           : `제목/설명 번역에 실패했습니다: ${friendlyError(err)}`;
         log(`제목/설명 번역 실패: ${err.message}`, LOG_LEVEL.WARN);
+        // 크레딧 부족(사용자 사정) 외의 실패만 워처에 메타 기능 오류로 보고
+        if (!/402|insufficient_credits/i.test(raw)) {
+          reportError(err, { action: 'metadata_translate', feature: 'metadata' });
+        }
         broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: `⚠️ ${metaError}`, current: 1, total: 1 }, state.tabId);
       }
     }
