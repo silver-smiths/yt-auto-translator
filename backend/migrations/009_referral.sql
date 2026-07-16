@@ -43,10 +43,11 @@ begin
       from public.users u
       join public.credit_transactions ct
         on ct.user_id = u.id and ct.type = 'deduction'
-       and ct.created_at >= p_date::timestamptz
-       and ct.created_at <  (p_date + 1)::timestamptz
+       and ct.created_at >= (p_date::timestamp AT TIME ZONE 'Asia/Seoul')        -- KST 하루 창(세션 TZ 무관)
+       and ct.created_at <  ((p_date + 1)::timestamp AT TIME ZONE 'Asia/Seoul')
+       and ct.created_at >= u.referred_at                                        -- 하한: 추천 연결 이후 소진만
      where u.referred_by is not null and u.referred_at is not null
-       and p_date < (u.referred_at + interval '12 months')::date   -- 추천연결 후 12개월 창
+       and p_date < (u.referred_at + interval '12 months')::date   -- 상한: 추천 연결 후 12개월
      group by u.id, u.referred_by
      having coalesce(sum(-ct.amount), 0) > 0
   loop

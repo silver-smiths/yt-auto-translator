@@ -86,8 +86,9 @@ begin
       from public.users u
       join public.credit_transactions ct
         on ct.user_id = u.id and ct.type = 'deduction'
-       and ct.created_at >= p_date::timestamptz
-       and ct.created_at <  (p_date + 1)::timestamptz
+       and ct.created_at >= (p_date::timestamp AT TIME ZONE 'Asia/Seoul')
+       and ct.created_at <  ((p_date + 1)::timestamp AT TIME ZONE 'Asia/Seoul')
+       and ct.created_at >= u.referred_at
      where u.referred_by is not null and u.referred_at is not null
        and p_date < (u.referred_at + interval '12 months')::date
      group by u.id, u.referred_by

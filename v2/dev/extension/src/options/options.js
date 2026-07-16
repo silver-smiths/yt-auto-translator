@@ -227,8 +227,10 @@ async function renderReferral() {
   box.innerHTML = `
     <div style="margin-bottom:6px;">내 추천 링크</div>
     <div style="display:flex; gap:6px;">
-      <input id="refLink" class="date-input" style="flex:1; min-width:0;" readonly>
-      <button class="btn" id="btnCopyRef" type="button">복사</button>
+      <input id="refLink" aria-label="내 추천 링크" readonly
+             style="flex:1; min-width:0; padding:8px 10px; font-size:13px; border:1px solid var(--border); border-radius:6px; background:#fff; color:var(--text);">
+      <button id="btnCopyRef" type="button"
+              style="padding:8px 16px; border:none; border-radius:6px; background:var(--primary); color:#fff; font-weight:600; cursor:pointer; white-space:nowrap;">복사</button>
     </div>
     <div style="margin-top:10px; display:flex; gap:18px;">
       <div>누적 적립 <strong>${(r.total_earned || 0).toLocaleString('ko-KR')} 크레딧</strong></div>

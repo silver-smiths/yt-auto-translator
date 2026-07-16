@@ -55,21 +55,22 @@ router.get('/', async (c) => {
     if (!code) { const { data: re } = await sb.from('users').select('referral_code').eq('id', userId).single(); code = re?.referral_code; }
   }
 
+  // 정확한 누적 적립·추천 인원 (전체 집계 — RPC)
+  const { data: summary } = await sb.rpc('referral_summary', { p_referrer: userId });
+  const s = (summary && summary[0]) || { total_earned: 0, referee_count: 0 };
+
+  // 최근 적립 내역(표시용 20건)
   const { data: rewards } = await sb.from('referral_rewards')
-    .select('referee_id, amount_krw, reward_date')
+    .select('amount_krw, reward_date')
     .eq('referrer_id', userId)
     .order('reward_date', { ascending: false })
-    .limit(60);
-
-  const rows = rewards || [];
-  const totalEarned = rows.reduce((s, r) => s + Number(r.amount_krw || 0), 0);
-  const refereeCount = new Set(rows.map(r => r.referee_id)).size;
+    .limit(20);
 
   return c.json({
     referral_code: code || null,     // 공유 링크: PAYMENT_URL?ref=<code> (익스텐션에서 조합)
-    total_earned: Math.round(totalEarned),
-    referee_count: refereeCount,     // 최근 60건 기준(대략치)
-    recent: rows.slice(0, 20).map(r => ({ date: r.reward_date, amount: Math.round(Number(r.amount_krw || 0)) })),
+    total_earned: Math.round(Number(s.total_earned || 0)),
+    referee_count: Number(s.referee_count || 0),
+    recent: (rewards || []).map(r => ({ date: r.reward_date, amount: Math.round(Number(r.amount_krw || 0)) })),
   });
 });
 
