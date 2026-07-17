@@ -261,31 +261,8 @@ function buildSourceLang(selected) {
 // ── 언어 그리드 빌드 ──────────────────────────────────────────────────────────
 function buildLangGrid() {
   langGrid.innerHTML = '';
-  let currentRegion = null;
-  TARGET_LANGUAGES.forEach(({ code, name, nativeName, region }) => {
-    // 지역이 바뀌면 전체 폭 헤더 + 지역 전체 선택/해제 토글 삽입
-    if (region && region !== currentRegion) {
-      currentRegion = region;
-      const regionCodes = TARGET_LANGUAGES.filter(l => l.region === region).map(l => l.code);
-      const allSelected = regionCodes.every(c => selectedLangs.has(c));
-
-      const header = document.createElement('div');
-      header.className = 'lang-region';
-
-      const label = document.createElement('span');
-      label.textContent = region;
-
-      const toggle = document.createElement('button');
-      toggle.type = 'button';
-      toggle.className = 'lang-region-toggle';
-      toggle.textContent = allSelected ? '전체 해제' : '전체 선택';
-      toggle.addEventListener('click', (e) => { e.preventDefault(); toggleRegion(region); });
-
-      header.appendChild(label);
-      header.appendChild(toggle);
-      langGrid.appendChild(header);
-    }
-
+  // 15개 언어는 도달 순 평면 목록으로 표시 (지역 그룹은 소그룹이 많아져 제거)
+  TARGET_LANGUAGES.forEach(({ code, name, nativeName }) => {
     const item = document.createElement('label');
     item.className = 'lang-item' + (selectedLangs.has(code) ? ' selected' : '');
 
@@ -330,22 +307,6 @@ function toggleLang(code) {
     selectedLangs.delete(code);
   } else {
     selectedLangs.add(code);
-  }
-  buildLangGrid();
-}
-
-// 지역 전체 선택/해제 — 모두 선택돼 있으면 해제, 아니면 전체 선택 (최소 1개 유지)
-function toggleRegion(region) {
-  const codes = TARGET_LANGUAGES.filter(l => l.region === region).map(l => l.code);
-  const allSelected = codes.every(c => selectedLangs.has(c));
-  if (allSelected) {
-    codes.forEach(c => selectedLangs.delete(c));
-    if (selectedLangs.size === 0) {
-      selectedLangs.add(TARGET_LANGUAGES[0].code);
-      flashLangNotice('⚠️ 최소 1개 언어는 선택되어 있어야 해 영어를 유지했습니다.');
-    }
-  } else {
-    codes.forEach(c => selectedLangs.add(c));
   }
   buildLangGrid();
 }

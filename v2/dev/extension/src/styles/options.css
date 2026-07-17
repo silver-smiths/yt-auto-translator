@@ -331,31 +331,6 @@ hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
 .lang-name { font-size: 12px; line-height: 1.3; }
 .lang-native { display: block; font-size: 11px; color: var(--text-secondary); }
 
-/* 지역 그룹 헤더 (그리드 전체 폭) */
-.lang-region {
-  grid-column: 1 / -1;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-top: 6px;
-  padding: 2px 2px 4px;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-secondary);
-  border-bottom: 1px solid var(--border);
-}
-.lang-region:first-child { margin-top: 0; }
-.lang-region-toggle {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--primary);
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0 2px;
-}
-.lang-region-toggle:hover { text-decoration: underline; }
-
 /* ── 알림 박스 ── */
 .notice {
   padding: 10px 13px;
