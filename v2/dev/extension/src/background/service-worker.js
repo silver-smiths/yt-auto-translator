@@ -11,6 +11,8 @@ import {
   subtitlesToSRT,
   updateVideoLocalizations,
   getVideoLocalizations,
+  resetUnitsUsed,
+  getUnitsUsed,
 } from '../lib/youtube-api.js';
 import {
   fetchCredits,
@@ -271,7 +273,7 @@ function filterTargetLangs(settings, trackInfo, existingCaptions) {
 
 // ── 제목/설명 번역 — 크레딧 모드 ──────────────────────────────────────────────
 
-async function translateAndUploadMetadataCredits(videoId, snippet, targetLangs, sourceLangName, settings) {
+async function translateAndUploadMetadataCredits(videoId, snippet, targetLangs, sourceLangName, settings, chargeUnits = false) {
   const items = [];
   if (settings.translateTitle       && snippet?.title)       items.push({ text: snippet.title });
   if (settings.translateDescription && snippet?.description) items.push({ text: snippet.description.slice(0, 3000) });
@@ -344,7 +346,9 @@ async function translateAndUploadMetadataCredits(videoId, snippet, targetLangs, 
     }
   }
 
-  await updateTranslationJob(metaJobId, { status: 'completed' });
+  // 자막 job이 없는(제목/설명만) 경우엔 quota를 여기서 정산 (자막 job이 있으면 그쪽이 정산)
+  await updateTranslationJob(metaJobId,
+    chargeUnits ? { status: 'completed', units: getUnitsUsed() } : { status: 'completed' });
 
   if (Object.keys(localizations).length) {
     await updateVideoLocalizations(videoId, localizations);
@@ -400,6 +404,8 @@ async function runTranslationCredits(tabId, settings) {
 
   let jobId = null;
   let vId = null, vTitle = null; // 실패 broadcast에서도 영상 식별용 (catch 스코프 공유)
+
+  resetUnitsUsed(); // 이번 번역의 YouTube quota(unit) 소비 집계 시작
 
   try {
     // 1. 잔액 조회 (실제 검증은 신규 번역이 필요한 경우에만)
@@ -470,7 +476,8 @@ async function runTranslationCredits(tabId, settings) {
       // 입력은 언어 3개씩 배치로 공유, 출력은 언어당 원문 분량만큼 발생
       const estCostPerLang =
         ((estTokens / MAX_LANGS_PER_CALL + 500) * pricing.input_per_m + estTokens * pricing.output_per_m)
-        / 1_000_000 * pricing.multiplier;
+        / 1_000_000 * pricing.multiplier
+        + 40; // YouTube quota: 자막 등록 400 units ÷ 10 = 40 크레딧/언어
 
       const affordable = Math.floor(balance / estCostPerLang);
       if (affordable <= 0) throw new Error('INSUFFICIENT_CREDITS');
@@ -686,7 +693,8 @@ async function runTranslationCredits(tabId, settings) {
         const metaBaseLang = videoSnippet?.defaultLanguage || videoSnippet?.defaultAudioLanguage || trackInfo.language;
         await translateAndUploadMetadataCredits(
           videoId, videoSnippet, excludeBaseLang(settings.targetLangs, metaBaseLang),
-          getLangName(trackInfo.language), settings
+          getLangName(trackInfo.language), settings,
+          !jobId  // 자막 job이 없으면(제목/설명만) quota를 메타 job에서 정산
         );
         metaDone = true;
       } catch (err) {
@@ -708,7 +716,8 @@ async function runTranslationCredits(tabId, settings) {
     // 자막 업로드는 이미 끝났으므로, PATCH 실패가 "전체 실패"로 오보고되지 않도록 catch로 격리
     if (jobId) {
       const finalStatus = state.shouldStop ? 'stopped' : 'completed';
-      await updateTranslationJob(jobId, { status: finalStatus })
+      // 자막 job이 있으면 이번 실행의 전체 YouTube quota(unit)를 여기서 정산(units/10 크레딧 추가 차감)
+      await updateTranslationJob(jobId, { status: finalStatus, units: getUnitsUsed() })
         .catch(e => log(`job 완료 처리 실패 (업로드는 완료됨): ${e.message}`, LOG_LEVEL.WARN));
     }
 

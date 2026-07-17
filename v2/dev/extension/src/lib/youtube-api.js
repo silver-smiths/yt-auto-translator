@@ -8,6 +8,14 @@
 const YT_API_BASE    = 'https://www.googleapis.com/youtube/v3';
 const YT_UPLOAD_BASE = 'https://www.googleapis.com/upload/youtube/v3';
 
+// ── YouTube API quota(unit) 소비 집계 (과금용) ──
+// 공식 단가: videos.list=1, captions.list=50, captions.download=200,
+//            captions.insert=400, captions.update=450, videos.update=50
+let _unitsUsed = 0;
+export function resetUnitsUsed() { _unitsUsed = 0; }
+export function getUnitsUsed() { return _unitsUsed; }
+function addUnits(n) { _unitsUsed += n; }
+
 // =============================================
 // 내부 토큰 관리
 // =============================================
@@ -146,6 +154,7 @@ function sameLang(a, b) {
  * 영상 기본 정보 조회 (defaultLanguage, defaultAudioLanguage 포함)
  */
 export async function getVideoDetails(videoId) {
+  addUnits(1);
   const res = await apiFetch(`${YT_API_BASE}/videos?part=snippet&id=${videoId}`);
   const data = await res.json();
   return data.items?.[0]?.snippet || null;
@@ -159,6 +168,7 @@ export async function getVideoDetails(videoId) {
  * 영상의 자막 트랙 목록 조회
  */
 export async function listCaptions(videoId) {
+  addUnits(50);
   const res = await apiFetch(`${YT_API_BASE}/captions?part=snippet&videoId=${videoId}`);
   const data = await res.json();
   return data.items || [];
@@ -249,6 +259,7 @@ export async function fetchSourceSubtitles(captions, sourceLang, videoDefaultLan
     isASR: target.snippet?.trackKind === 'asr'
   };
 
+  addUnits(200);
   const res = await apiFetch(`${YT_API_BASE}/captions/${target.id}?tfmt=srt`);
   const srtText = await res.text();
   const subtitles = parseSRT(srtText);
@@ -319,6 +330,7 @@ async function _multipartUpload(url, metadata, srtContent, method = 'POST') {
 }
 
 async function _insertCaption(videoId, langCode, srtContent) {
+  addUnits(400);
   return _multipartUpload(
     `${YT_UPLOAD_BASE}/captions?uploadType=multipart&part=snippet`,
     { snippet: { videoId, language: langCode, name: `[AI] ${langCode.toUpperCase()}`, isDraft: false } },
@@ -328,6 +340,7 @@ async function _insertCaption(videoId, langCode, srtContent) {
 }
 
 async function _updateCaption(captionId, langCode, srtContent) {
+  addUnits(450);
   return _multipartUpload(
     `${YT_UPLOAD_BASE}/captions?uploadType=multipart&part=snippet`,
     { id: captionId, snippet: { language: langCode, name: `[AI] ${langCode.toUpperCase()}`, isDraft: false } },
@@ -349,6 +362,7 @@ async function _updateCaption(captionId, langCode, srtContent) {
  * @returns {Object} { 'en': { title, description }, ... } (없으면 {})
  */
 export async function getVideoLocalizations(videoId) {
+  addUnits(1);
   const res = await apiFetch(`${YT_API_BASE}/videos?part=localizations&id=${videoId}`);
   const data = await res.json();
   return data.items?.[0]?.localizations || {};
@@ -360,6 +374,7 @@ export async function getVideoLocalizations(videoId) {
  */
 export async function updateVideoLocalizations(videoId, newLocalizations) {
   // GET 기존 localizations (PUT은 전체 교체이므로 먼저 읽어서 병합)
+  addUnits(1);
   const getRes = await apiFetch(`${YT_API_BASE}/videos?part=localizations&id=${videoId}`);
   const getData = await getRes.json();
   const existing = getData.items?.[0]?.localizations || {};
@@ -369,6 +384,7 @@ export async function updateVideoLocalizations(videoId, newLocalizations) {
     merged[lang] = { ...(existing[lang] || {}), ...data };
   }
 
+  addUnits(50);
   const updateRes = await apiFetch(`${YT_API_BASE}/videos?part=localizations`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },

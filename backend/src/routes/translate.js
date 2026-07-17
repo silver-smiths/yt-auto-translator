@@ -1,6 +1,6 @@
 import { Hono } from 'hono';
 import { getSupabase } from '../lib/supabase.js';
-import { INPUT_PER_M, OUTPUT_PER_M, CREDIT_PER_USD, MAX_SUBTITLES, MAX_TARGET_LANGS, OVERDRAFT_CREDITS } from '../lib/constants.js';
+import { INPUT_PER_M, OUTPUT_PER_M, CREDIT_PER_USD, MAX_SUBTITLES, MAX_TARGET_LANGS, OVERDRAFT_CREDITS, UNITS_PER_CREDIT } from '../lib/constants.js';
 
 const app = new Hono();
 
@@ -349,10 +349,12 @@ app.post('/job', async (c) => {
 app.patch('/job/:id', async (c) => {
   const userId = c.get('userId');
   const jobId  = c.req.param('id');
-  const { status, error_message } = await c.req.json();
+  const { status, error_message, units } = await c.req.json();
   if (!['completed', 'failed', 'stopped'].includes(status)) {
     return c.json({ error: 'INVALID_STATUS' }, 400);
   }
+  // YouTube quota 과금: 소비 unit → 크레딧 (10 unit = 1 크레딧)
+  const quotaCredits = Math.round((Number(units) || 0) / UNITS_PER_CREDIT);
 
   const sb = getSupabase(c.env);
 
@@ -378,14 +380,15 @@ app.patch('/job/:id', async (c) => {
     .eq('id', jobId);
 
   // 완료/실패/중단 시 크레딧 차감 (idempotency: deducted_at으로 이중 차감 방지)
-  if (['completed', 'failed', 'stopped'].includes(status) && job.api_cost_usd > 0 && !job.deducted_at) {
+  if (['completed', 'failed', 'stopped'].includes(status) && (job.api_cost_usd > 0 || quotaCredits > 0) && !job.deducted_at) {
     // supabase-js rpc는 throw하지 않고 {error}를 반환하므로 반드시 error를 검사해야 함.
     // 차감이 실패했는데 deducted_at을 기록하면 영구 무과금이 되므로, 성공했을 때만 마킹한다.
     const { error: deductError } = await sb.rpc('deduct_credits', {
-      p_user_id:    userId,
-      p_job_id:     jobId,
-      p_api_cost:   job.api_cost_usd,
-      p_multiplier: CREDIT_PER_USD, // apiCostUsd × (배수×환율) = 차감 크레딧(원)
+      p_user_id:      userId,
+      p_job_id:       jobId,
+      p_api_cost:     job.api_cost_usd,
+      p_multiplier:   CREDIT_PER_USD,   // apiCostUsd × (배수×환율) = Gemini 차감 크레딧(원)
+      p_quota_credits: quotaCredits,    // YouTube quota 차감 크레딧(units/10)
     });
     if (deductError) {
       console.error('[PATCH] deduct_credits 실패:', deductError.message, { jobId, userId });

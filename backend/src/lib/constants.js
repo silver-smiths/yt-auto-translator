@@ -2,13 +2,17 @@
 // 단가 출처: ai.google.dev/gemini-api/docs/pricing (2026-07 확인)
 export const INPUT_PER_M       = 0.30;   // Gemini 2.5 Flash input  $/1M tokens
 export const OUTPUT_PER_M      = 2.50;   // Gemini 2.5 Flash output $/1M tokens (thinking 포함)
-export const CREDIT_MULTIPLIER = 15.0;   // API 원가 대비 사용자 청구 배율
+export const CREDIT_MULTIPLIER = 20.0;   // API 원가 대비 사용자 청구 배율
 export const KRW_TO_USD_RATE   = 1350;   // 고정 환율 (KRW → USD)
 
 // ── 크레딧 단위 = 원화(KRW) 1:1 ──────────────────────────────────
 // balance/credits_charged는 "원화 크레딧" 단위. Gemini 원가(USD)에 이 값을 곱하면 차감 크레딧(원)이 된다.
-// CREDIT_PER_USD = 배수 × 환율 → 예: apiCostUsd 0.03 × 20250 ≈ 607 크레딧(원)
-export const CREDIT_PER_USD = CREDIT_MULTIPLIER * KRW_TO_USD_RATE; // 20250
+// CREDIT_PER_USD = 배수 × 환율 → 예: apiCostUsd 0.03 × 27000 ≈ 810 크레딧(원)
+export const CREDIT_PER_USD = CREDIT_MULTIPLIER * KRW_TO_USD_RATE; // 27000
+
+// ── YouTube API quota 과금 (한정 자원) ──────────────────────────
+// 소비한 YouTube unit을 크레딧으로 환산: 10 unit = 1 크레딧(원).
+export const UNITS_PER_CREDIT = 10;
 
 export const MAX_SUBTITLES  = 500;  // 청크당 자막 최대 개수
 export const MAX_TARGET_LANGS = 10; // 동시 번역 최대 언어 수
