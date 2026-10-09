@@ -379,7 +379,7 @@ app.post('/job', async (c) => {
 app.patch('/job/:id', async (c) => {
   const userId = c.get('userId');
   const jobId  = c.req.param('id');
-  const { status, error_message, units, success } = await c.req.json();
+  const { status, error_message, units } = await c.req.json();
   if (!['completed', 'failed', 'stopped'].includes(status)) {
     return c.json({ error: 'INVALID_STATUS' }, 400);
   }
@@ -409,31 +409,32 @@ app.patch('/job/:id', async (c) => {
     })
     .eq('id', jobId);
 
-  // 결과물 0(성공 언어 0) → 과금 면제. 실패한 번역은 청구하지 않는다(사용자 보호).
-  //   자막/제목·설명이 하나도 등록 안 됐으면 Gemini 토큰을 썼더라도 사용자에겐 청구 X.
-  //   settled 표시(deducted_at)만 남겨 미정산 스위퍼가 다시 청구하지 않게 한다.
-  if (['completed', 'failed', 'stopped'].includes(status) && Number(success) === 0 && !job.deducted_at) {
-    await sb.from('translation_jobs').update({ deducted_at: new Date().toISOString() }).eq('id', jobId);
-    return c.json({ ok: true, waived: true });
-  }
-
-  // 완료/실패/중단 시 크레딧 차감 (idempotency: deducted_at으로 이중 차감 방지)
-  if (['completed', 'failed', 'stopped'].includes(status) && (job.api_cost_usd > 0 || quotaCredits > 0) && !job.deducted_at) {
-    // supabase-js rpc는 throw하지 않고 {error}를 반환하므로 반드시 error를 검사해야 함.
-    // 차감이 실패했는데 deducted_at을 기록하면 영구 무과금이 되므로, 성공했을 때만 마킹한다.
-    const { error: deductError } = await sb.rpc('deduct_credits', {
-      p_user_id:      userId,
-      p_job_id:       jobId,
-      p_api_cost:     job.api_cost_usd,
-      p_multiplier:   CREDIT_PER_USD,   // apiCostUsd × (배수×환율) = Gemini 차감 크레딧(원)
-      p_quota_credits: quotaCredits,    // YouTube quota 차감 크레딧(units/10)
-    });
-    if (deductError) {
-      await notifyError(c.env, 'translate/deduct_credits', new Error(deductError.message), { jobId, userId });
-      // deducted_at 미기록 → 재전송/재호출 시 재시도 가능
+  // 정산 — 과금 기준은 "서버가 측정한 실제 Gemini 사용량(api_cost_usd)".
+  //   클라이언트가 보낸 success 값에 의존하지 않는다 → success=0 보고로 무료 번역을 받는 우회를 차단.
+  //   서버가 실제로 생성한 결과가 없으면(api_cost_usd=0 && quota=0) 무과금으로 정산만 마킹(= 번역 실패 시 무과금).
+  //   (idempotency: deducted_at으로 이중 차감 방지)
+  if (['completed', 'failed', 'stopped'].includes(status) && !job.deducted_at) {
+    if (job.api_cost_usd > 0 || quotaCredits > 0) {
+      // supabase-js rpc는 throw하지 않고 {error}를 반환하므로 반드시 error를 검사해야 함.
+      // 차감이 실패했는데 deducted_at을 기록하면 영구 무과금이 되므로, 성공했을 때만 마킹한다.
+      const { error: deductError } = await sb.rpc('deduct_credits', {
+        p_user_id:      userId,
+        p_job_id:       jobId,
+        p_api_cost:     job.api_cost_usd,
+        p_multiplier:   CREDIT_PER_USD,   // apiCostUsd × (배수×환율) = Gemini 차감 크레딧(원)
+        p_quota_credits: quotaCredits,    // YouTube quota 차감 크레딧(units/10)
+      });
+      if (deductError) {
+        await notifyError(c.env, 'translate/deduct_credits', new Error(deductError.message), { jobId, userId });
+        // deducted_at 미기록 → 재전송/재호출 시 재시도 가능
+      } else {
+        await sb.from('translation_jobs')
+          .update({ deducted_at: new Date().toISOString() })
+          .eq('id', jobId);
+      }
     } else {
-      await sb
-        .from('translation_jobs')
+      // 서버가 생성한 번역 결과 없음 → 무과금으로 정산 마킹 (스위퍼 재처리 방지)
+      await sb.from('translation_jobs')
         .update({ deducted_at: new Date().toISOString() })
         .eq('id', jobId);
     }

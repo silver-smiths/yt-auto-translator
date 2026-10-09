@@ -31,6 +31,26 @@ export async function grantPaypalOrder(env, orderId) {
     .eq('portone_id', orderId).eq('status', 'pending').single();
   if (!payment) return { granted: false }; // 이미 지급됐거나 없는 주문
 
+  // PayPal에서 실제 결제 금액을 조회해 DB amount_paid와 대조 (금액 위변조·부분캡처·미완료 방어)
+  const token = await getPaypalToken(env);
+  if (!token) throw new Error('PAYPAL_AUTH_FAILED');
+  const ores = await fetch(`${paypalBase(env)}/v2/checkout/orders/${orderId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!ores.ok) throw new Error('PAYPAL_ORDER_FETCH_FAILED');
+  const order = await ores.json();
+  const cap = order.purchase_units?.[0]?.payments?.captures?.[0];
+  const paidValue = Number(cap?.amount?.value);
+  if (order.status !== 'COMPLETED' || cap?.status !== 'COMPLETED'
+      || cap?.amount?.currency_code !== 'USD'
+      || !Number.isFinite(paidValue)
+      || Math.abs(paidValue - Number(payment.amount_paid)) > 0.01) {
+    await notifyError(env, 'paypal/amount-verify', new Error(
+      `결제 검증 실패 order=${order.status} cap=${cap?.status} 실결제=${paidValue} ${cap?.amount?.currency_code} vs 주문=${payment.amount_paid} USD`
+    ), { orderId, payment_id: payment.id });
+    throw new Error('PAYPAL_AMOUNT_MISMATCH');
+  }
+
   const amountCredits = Math.round(Number(payment.amount_paid) * KRW_TO_USD_RATE);
   const { error } = await sb.rpc('grant_credits', {
     p_user_id: payment.user_id, p_payment_id: payment.id, p_amount_usd: amountCredits,
