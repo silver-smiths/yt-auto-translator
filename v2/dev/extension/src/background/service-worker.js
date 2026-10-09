@@ -1,6 +1,7 @@
 import { MSG, TARGET_LANGUAGES, getChunkSize, API_BASE } from '../lib/constants.js';
 import { loadSettings } from '../lib/storage.js';
-import { reportError, reportTranslationResult, installGlobalErrorHandler, log, LOG_LEVEL, initSentry } from '../lib/logger.js';
+import { reportError, reportTranslationDetail, installGlobalErrorHandler, log, LOG_LEVEL, initSentry } from '../lib/logger.js';
+import { t } from '../lib/i18n.js';
 import {
   authorizeYouTube,
   extractVideoId,
@@ -17,6 +18,7 @@ import {
 import {
   fetchCredits,
   fetchReferral,
+  applyReferral,
   createCheckout,
   createTranslationJob,
   translateChunk,
@@ -31,8 +33,66 @@ import {
 
 installGlobalErrorHandler('background');
 
-const MAX_CONCURRENT   = 3; // Vercel 동시 호출 부담 감소 (3 × langBatches = 최대 9개 동시 호출)
-const MAX_LANGS_PER_CALL = 3; // Vercel Edge 25s 제한 내 완료 가능한 최대 언어 수
+// 콜당 언어 수 — 2개면 출력이 3개 대비 1/3 줄어 25s 타임아웃에 여유(실측 median 19s→~13s).
+// 긴 영상은 언어당 청크가 20개+라 콜 하나만 타임아웃해도 그 언어가 통째로 실패하므로,
+// 콜당 부담을 낮춰 1차 성공률을 올리는 게 완주율에 결정적. (재시도와 함께 동작)
+const MAX_LANGS_PER_CALL = 2;
+// 동시 Gemini 호출 상한 — 청크×언어배치가 폭증(긴 영상×다국어)해도 이 수를 넘지 않게 풀 실행.
+// 넘치면 Gemini/릴레이가 한도·타임아웃으로 연쇄 실패(ALL_FALLBACKS_FAILED)하므로 안전값으로 고정.
+const GEMINI_CONCURRENCY = 4;
+
+// 청크 재시도 — 504/네트워크 등 "일시적" 실패는 백오프 두고 재시도해 회복.
+// 긴 영상에서 청크 하나의 일시 실패가 언어 전체를 죽이는 것을 방지(0.75^21 붕괴 완화).
+// 크레딧 부족·권한 오류는 재시도해도 소용없으므로 즉시 실패시킨다.
+const CHUNK_MAX_RETRIES = 2;
+function isTransientChunkError(msg) {
+  return /ALL_FALLBACKS_FAILED|TRANSLATE_CHUNK_FAILED_5|Failed to fetch|NetworkError|network|timeout/i.test(msg || '');
+}
+async function translateChunkResilient(params) {
+  let lastErr;
+  for (let attempt = 0; attempt <= CHUNK_MAX_RETRIES; attempt++) {
+    try {
+      return await translateChunk(params);
+    } catch (err) {
+      lastErr = err;
+      if (!isTransientChunkError(err?.message) || attempt === CHUNK_MAX_RETRIES) throw err;
+      // 지수 백오프(1s→2s) — 릴레이 과부하가 가라앉을 시간을 준 뒤 재시도
+      await new Promise(r => setTimeout(r, 1000 * (attempt + 1)));
+    }
+  }
+  throw lastErr;
+}
+
+// 한 번의 실행에서 시도할 라운드 수(1차 + 보수 2회). 남으면 재클릭으로 이어서 완성.
+const MAX_TRANSLATE_ROUNDS = 3;
+// 진행 저장 간격(완료 청크 수) — SW가 중간에 종료돼도 이만큼 이내의 작업만 재실행.
+const PROGRESS_SAVE_EVERY = 20;
+
+// 언어가 모든 라인 번역을 채웠는지 (빈칸=null 없이 total개 확보)
+function isLangComplete(arr, total) {
+  if (!Array.isArray(arr) || arr.length < total) return false;
+  for (let i = 0; i < total; i++) if (arr[i] == null) return false;
+  return true;
+}
+
+// 이번 라운드에 번역이 필요한 (청크, 언어배치) 목록 — 빠진 청크만, 청크별로 미완 언어를 배치.
+// 재개 시 이미 채워진 청크는 건너뛰므로, 길이가 길어도 남은 것만 처리한다.
+function buildMissingPairs(pendingLangs, langResults, subtitleChunks, chunkSize) {
+  const pairs = [];
+  for (let ci = 0; ci < subtitleChunks.length; ci++) {
+    const off = ci * chunkSize;
+    const len = subtitleChunks[ci].length;
+    const need = pendingLangs.filter(code => {
+      const arr = langResults[code];
+      for (let j = 0; j < len; j++) if (arr[off + j] == null) return true;
+      return false;
+    });
+    for (let b = 0; b < need.length; b += MAX_LANGS_PER_CALL) {
+      pairs.push({ chunk: subtitleChunks[ci], offset: off, langBatch: need.slice(b, b + MAX_LANGS_PER_CALL) });
+    }
+  }
+  return pairs;
+}
 
 // ── 유틸리티 ──────────────────────────────────────────────────────────────────
 
@@ -89,42 +149,42 @@ function friendlyError(err) {
   const msg = (err?.message || String(err)).toLowerCase();
 
   if (msg.includes('insufficient_credits')) {
-    return '크레딧이 부족합니다. ⚙️ 설정에서 크레딧을 충전해 주세요.';
+    return t('feCredit');
   }
   if (msg.includes('auth_failed') || msg.includes('bad client id') || msg.includes('oauth') ||
       msg.includes('auth token') || msg.includes('identity')) {
-    return 'Google 계정 연동에 문제가 발생했습니다. 페이지를 새로고침 후 다시 시도해 주세요.';
+    return t('feAuth');
   }
   if (msg.includes('credits_fetch_failed') || msg.includes('create_job_failed') ||
       msg.includes('update_job_failed') || msg.includes('checkout_failed')) {
-    return '번역 서버 연결에 실패했습니다. 페이지를 새로고침 후 다시 시도해 주세요.';
+    return t('feServer');
   }
   if (msg.includes('401') || msg.includes('api_key_invalid') ||
       msg.includes('api key not valid') || msg.includes('invalid api key')) {
-    return '일시적인 서버 오류가 발생했습니다. 잠시 후 다시 시도하고, 계속되면 문의해 주세요.';
+    return t('feTemp');
   }
   if (msg.includes('403') || msg.includes('forbidden') ||
       msg.includes('insufficientpermissions') || msg.includes('access denied')) {
-    return '권한 오류가 발생했습니다. 해당 영상의 소유자 계정으로 YouTube에 로그인되어 있는지 확인해 주세요.';
+    return t('fePerm');
   }
   if (msg.includes('429') || msg.includes('rate limit') || msg.includes('quota') ||
       msg.includes('resource_exhausted') || msg.includes('too many requests')) {
-    return 'API 요청 한도를 초과했습니다. 잠시 후 다시 시도해 주세요.';
+    return t('feQuota');
   }
   if (msg.includes('all_fallbacks_failed')) {
-    return '번역 서버가 일시적으로 응답하지 않습니다. 잠시 후 다시 시도해 주세요.';
+    return t('feFallback');
   }
   if (msg.includes('failed to fetch') || msg.includes('networkerror') ||
       msg.includes('timeout') || msg.includes('econnrefused')) {
-    return '네트워크 연결을 확인해 주세요. 인터넷 연결 후 다시 시도해 주세요.';
+    return t('feNetwork');
   }
   if (msg.includes('subtitle') || msg.includes('자막') || msg.includes('caption')) {
-    return '영상에 원본 자막이 없습니다. YouTube Studio에서 자막을 먼저 추가한 뒤 번역을 시작해 주세요.';
+    return t('feNoSub');
   }
   if (msg.includes('video id') || msg.includes('videoid') || msg.includes('영상 id')) {
-    return 'YouTube Studio 영상 수정 페이지에서만 사용할 수 있습니다.';
+    return t('feVideoPage');
   }
-  return '번역 중 오류가 발생했습니다. 페이지를 새로고침 후 다시 시도해 주세요.';
+  return t('feDefault');
 }
 
 // ── 업로드 실패 상황별 상세 안내 메시지 ──────────────────────────────────────
@@ -133,27 +193,27 @@ function getUploadErrorMessage(err, langName) {
 
   if (msg.includes('quotaexceeded') || msg.includes('할당량') ||
       (msg.includes('quota') && msg.includes('exceeded'))) {
-    return `[${langName}] YouTube 일일 API 한도 초과 — 번역 결과는 저장되었습니다. 내일(태평양 표준시 자정) 이후 다시 번역을 시작하면 추가 크레딧 없이 자막이 자동 등록됩니다.`;
+    return `[${langName}] ${t('ueQuota')}`;
   }
   if (msg.includes('forbidden') || msg.includes('insufficientpermissions') || msg.includes('access denied')) {
-    return `[${langName}] 권한 오류 — 이 영상의 채널 소유자 계정으로 YouTube에 로그인되어 있는지 확인해 주세요.`;
+    return `[${langName}] ${t('uePerm')}`;
   }
   if (msg.includes('401') || msg.includes('unauthorized') || msg.includes('invalid credentials') || msg.includes('auth')) {
-    return `[${langName}] 인증 만료 — 페이지를 새로고침 후 다시 시도해 주세요.`;
+    return `[${langName}] ${t('ueAuth')}`;
   }
   if (msg.includes('404') || msg.includes('not found') || msg.includes('videonotfound')) {
-    return `[${langName}] 영상을 찾을 수 없음 — 영상이 삭제됐거나 비공개로 전환되었을 수 있습니다.`;
+    return `[${langName}] ${t('ueNotFound')}`;
   }
   if (msg.includes('409') || msg.includes('duplicate') || msg.includes('already exists')) {
-    return `[${langName}] 이미 해당 언어 자막이 존재합니다 — YouTube Studio에서 기존 자막을 삭제 후 다시 시도해 주세요.`;
+    return `[${langName}] ${t('ueDup')}`;
   }
   if (msg.includes('failed to fetch') || msg.includes('networkerror') || msg.includes('network')) {
-    return `[${langName}] 네트워크 오류 — 인터넷 연결 상태를 확인하고 다시 시도해 주세요.`;
+    return `[${langName}] ${t('ueNetwork')}`;
   }
   if (msg.includes('500') || msg.includes('internal server')) {
-    return `[${langName}] YouTube 서버 오류 — 일시적인 문제입니다. 잠시 후 다시 시도해 주세요.`;
+    return `[${langName}] ${t('ueServer')}`;
   }
-  return `[${langName}] 자막 등록 실패 (${err?.message || '알 수 없는 오류'}) — 문제가 계속되면 설정 화면의 📝 문의하기로 알려주세요.`;
+  return `[${langName}] ${t('ueDefault')} (${err?.message || t('ueUnknown')}) — ${t('ueContact')}`;
 }
 
 function broadcast(message, tabId = state.tabId) {
@@ -200,13 +260,13 @@ async function prepareSubtitles(tabId, settings, needSubtitles = true) {
   const videoId = extractVideoId(tab.url);
   if (!videoId) throw new Error('YouTube 영상 ID를 찾을 수 없습니다.');
 
-  broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: 'YouTube 인증 중...', current: 0, total: state.progress.total });
+  broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: t('pgAuth'), current: 0, total: state.progress.total });
   await authorizeYouTube();
 
-  broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: '영상 정보 조회 중...', current: 0, total: state.progress.total });
+  broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: t('pgVideoInfo'), current: 0, total: state.progress.total });
   const videoSnippet = await getVideoDetails(videoId);
 
-  broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: '원본 자막 확인 중...', current: 0, total: state.progress.total });
+  broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: t('pgCheckSubs'), current: 0, total: state.progress.total });
   const existingCaptions = await listCaptions(videoId);
 
   // 자막 번역이 필요 없으면(제목/설명만) 자막 다운로드(200 units)를 건너뛰어 API 절약.
@@ -220,7 +280,7 @@ async function prepareSubtitles(tabId, settings, needSubtitles = true) {
     };
   }
 
-  broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: '원본 자막 불러오는 중...', current: 0, total: state.progress.total });
+  broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: t('pgLoadSubs'), current: 0, total: state.progress.total });
   const wantMeta = settings.translateTitle || settings.translateDescription;
   try {
     const { subtitles, trackInfo } = await fetchSourceSubtitles(
@@ -245,6 +305,23 @@ async function prepareSubtitles(tabId, settings, needSubtitles = true) {
   }
 }
 
+// 대상 언어에 이미 표준(수동 업로드/기존) 자막 트랙이 있는지
+function hasStandardCaption(existingCaptions, ytCode) {
+  return existingCaptions.some(c =>
+    sameLang(c.snippet?.language, ytCode) && c.snippet?.trackKind === 'standard'
+  );
+}
+
+// 대상 언어 중 아직 표준 자막이 없는(=새로 번역할) 언어가 하나라도 있는지.
+// 원본 다운로드(200u) 전 판정용 — 기본언어 제외와 무관하게 '존재'만 확인해
+// 소스언어 오판으로 다운로드를 잘못 건너뛰지 않도록 보수적으로 처리.
+function hasUntranslatedSubtitleTarget(settings, existingCaptions) {
+  return (settings.targetLangs || []).some(code => {
+    const lang = TARGET_LANGUAGES.find(l => l.code === code);
+    return lang && !hasStandardCaption(existingCaptions, lang.ytCode);
+  });
+}
+
 function filterTargetLangs(settings, trackInfo, existingCaptions) {
   const sourceLang = trackInfo.language;
   const alreadyTranslated = [];
@@ -259,11 +336,9 @@ function filterTargetLangs(settings, trackInfo, existingCaptions) {
       return false;
     }
 
-    const hasExisting = existingCaptions.some(c =>
-      sameLang(c.snippet?.language, lang.ytCode) &&
-      c.snippet?.trackKind === 'standard'
-    );
-    if (hasExisting) { alreadyTranslated.push(lang.name); return false; }
+    if (hasStandardCaption(existingCaptions, lang.ytCode)) {
+      alreadyTranslated.push(lang.name); return false;
+    }
 
     return true;
   });
@@ -273,11 +348,32 @@ function filterTargetLangs(settings, trackInfo, existingCaptions) {
 
 // ── 제목/설명 번역 — 크레딧 모드 ──────────────────────────────────────────────
 
+// YouTube localization 제약(제목 100자·설명 5000자, '<' '>' 금지)에 맞춰 안전하게 자름.
+// 한 언어라도 초과하면 YouTube가 localizations PUT 전체를 400(invalidVideoMetadata)으로 거부한다.
+function clampLocalized(text, max) {
+  const clean = String(text).replace(/[<>]/g, '');
+  const cp = [...clean]; // 코드포인트 기준 길이 (CJK·이모지 안전)
+  return cp.length > max ? cp.slice(0, max).join('').trimEnd() : clean;
+}
+
+// 실패 원인을 사용자 표시용 카테고리로 분류 (에러코드·원문 등 기술 상세는 UI에 노출 안 함).
+function classifyFailure(rawMsg = '') {
+  const m = String(rawMsg).toLowerCase();
+  if (/402|insufficient_credits|크레딧/.test(m))                                    return '크레딧 부족';
+  if (/quotaexceeded|할당량|일일 api 한도|quota.*exceeded|ratelimit|rate.?limit/.test(m)) return 'YouTube 일일 사용량 한도 소진';
+  if (/409|duplicate|already.?exists|이미 해당 언어/.test(m))                        return '이미 등록된 자막 있음';
+  if (/401|unauthorized|invalid credentials|인증 만료/.test(m))                     return '로그인 만료';
+  if (/forbidden|insufficientpermissions|access denied|권한 오류/.test(m))          return '채널 권한 오류';
+  if (/404|not found|videonotfound|영상을 찾을 수 없/.test(m))                       return '영상을 찾을 수 없음';
+  if (/failed to fetch|networkerror|\bnetwork\b|네트워크/.test(m))                   return '네트워크 오류';
+  return '일시적 오류';
+}
+
 async function translateAndUploadMetadataCredits(videoId, snippet, targetLangs, sourceLangName, settings, chargeUnits = false) {
   const items = [];
   if (settings.translateTitle       && snippet?.title)       items.push({ text: snippet.title });
   if (settings.translateDescription && snippet?.description) items.push({ text: snippet.description.slice(0, 3000) });
-  if (!items.length || !targetLangs.length) return;
+  if (!items.length || !targetLangs.length) return false;
 
   // 이미 제목/설명이 등록된 언어는 건너뜀 (반복 실행 시 재번역·재과금 방지)
   let metaTargets = targetLangs;
@@ -296,10 +392,10 @@ async function translateAndUploadMetadataCredits(videoId, snippet, targetLangs, 
   } catch (e) {
     log(`기존 localization 조회 실패(전체 번역 진행): ${e.message}`, LOG_LEVEL.WARN);
   }
-  if (!metaTargets.length) return; // 전부 이미 등록됨
+  if (!metaTargets.length) return false; // 전부 이미 등록됨
   targetLangs = metaTargets;
 
-  broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: '제목/설명 번역 중...', current: 0, total: 1 });
+  broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: t('pgMetaTranslating'), current: 0, total: 1 });
 
   const { job_id: metaJobId } = await createTranslationJob({
     video_id:     videoId,
@@ -332,11 +428,11 @@ async function translateAndUploadMetadataCredits(videoId, snippet, targetLangs, 
         let idx = 0;
         if (settings.translateTitle) {
           const t = translated[idx++];
-          if (t) entry.title = t;
+          if (t) entry.title = clampLocalized(t, 100); // YouTube 제목 100자 제한
         }
         if (settings.translateDescription) {
           const d = translated[idx];
-          if (d) entry.description = d;
+          if (d) entry.description = clampLocalized(d, 5000); // YouTube 설명 5000자 제한
         }
         if (Object.keys(entry).length) localizations[lang.ytCode] = entry;
       }
@@ -347,16 +443,20 @@ async function translateAndUploadMetadataCredits(videoId, snippet, targetLangs, 
   }
 
   // 자막 job이 없는(제목/설명만) 경우엔 quota를 여기서 정산 (자막 job이 있으면 그쪽이 정산)
+  // success(등록된 언어 수)를 함께 보내 — 서버가 성공 0이면 과금 면제
+  const metaSuccess = Object.keys(localizations).length;
   await updateTranslationJob(metaJobId,
-    chargeUnits ? { status: 'completed', units: getUnitsUsed() } : { status: 'completed' });
+    chargeUnits ? { status: 'completed', units: getUnitsUsed(), success: metaSuccess } : { status: 'completed', success: metaSuccess });
 
   if (Object.keys(localizations).length) {
     await updateVideoLocalizations(videoId, localizations);
-    broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: '제목/설명 등록 완료 ✓', current: 1, total: 1 });
+    broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: t('pgMetaDone'), current: 1, total: 1 });
+    return true;
   } else if (metaFailCount > 0) {
     // 전 배치 실패 — 침묵하지 않고 사용자에게 안내
-    broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: '⚠️ 제목/설명 번역에 실패했습니다. 자막 결과에는 영향이 없습니다.', current: 1, total: 1 });
+    broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: t('pgMetaFail'), current: 1, total: 1 });
   }
+  return false;
 }
 
 // ── 원격 설정(kill-switch) 조회 — 60초 캐시 ────────────────────────────────────
@@ -409,30 +509,53 @@ async function runTranslationCredits(tabId, settings) {
 
   try {
     // 1. 잔액 조회 (실제 검증은 신규 번역이 필요한 경우에만)
-    broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: '크레딧 잔액 확인 중...', current: 0, total: state.progress.total });
+    broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: t('pgCheckCredit'), current: 0, total: state.progress.total });
     const { balance, pricing } = await fetchCredits();
 
-    // 2. YouTube 인증 + 자막 가져오기 (자막 OFF면 다운로드 스킵 → API 절약)
-    const needSubtitles = settings.translateSubtitles !== false;
-    const { videoId, videoSnippet, subtitles: sourceSubtitles, trackInfo, existingCaptions, subtitlesError } =
-      await prepareSubtitles(tabId, settings, needSubtitles);
+    // 2. YouTube 인증 + 영상/자막목록 조회 (다운로드 200u 없이 먼저 조회)
+    const wantSubtitles = settings.translateSubtitles !== false;
+    const prep = await prepareSubtitles(tabId, settings, false);
+    const { videoId, videoSnippet, existingCaptions } = prep;
     vId = videoId;
     vTitle = videoSnippet?.title || videoId;
+
+    // 2-1. 원본 자막 다운로드(200u)는 "새로 번역할 자막 언어가 있을 때"만 수행.
+    //      이미 모든 대상 언어에 수동/기존 자막이 있으면(재실행 등) 다운로드를 건너뛰어 quota 절약.
+    //      (사용자에게는 이 경우에도 여전히 0 크레딧 — 아무것도 등록하지 않으므로)
+    let trackInfo = prep.trackInfo;
+    let sourceSubtitles = [];
+    let subtitlesError = null;
+    if (wantSubtitles && hasUntranslatedSubtitleTarget(settings, existingCaptions)) {
+      broadcast({ type: MSG.TRANSLATION_PROGRESS, langName: t('pgLoadSubs'), current: 0, total: state.progress.total });
+      const wantMeta = settings.translateTitle || settings.translateDescription;
+      try {
+        const src = await fetchSourceSubtitles(
+          existingCaptions, settings.sourceLang,
+          videoSnippet?.defaultLanguage, videoSnippet?.defaultAudioLanguage
+        );
+        if (!src.subtitles.length) throw new Error('원본 자막 내용이 비어 있습니다.');
+        sourceSubtitles = src.subtitles;
+        trackInfo       = src.trackInfo;
+      } catch (subErr) {
+        if (!wantMeta) throw subErr;      // 자막만 원했는데 실패 → 전체 실패
+        subtitlesError = subErr.message;  // 제목/설명은 살림
+      }
+    }
 
     // 자막 준비는 실패했지만 제목/설명 번역은 살아남은 경우 — 자막만 건너뜀
     if (subtitlesError) {
       broadcast({
         type: MSG.TRANSLATION_PROGRESS,
-        langName: '⚠️ 원본 자막이 없어 자막 번역은 건너뜁니다. 제목/설명만 번역합니다.',
+        langName: t('pgNoSubs'),
         current: 0, total: state.progress.total,
       });
     }
 
     const sourceLangName = getLangName(trackInfo.language);
-    const trackKindLabel = trackInfo.isASR ? '(자동생성)' : '(수동업로드)';
+    const trackKindLabel = trackInfo.isASR ? t('pgASR') : t('pgManual');
     broadcast({
       type: MSG.TRANSLATION_PROGRESS,
-      langName: `원본 감지: ${sourceLangName} ${trackKindLabel}`,
+      langName: `${t('pgDetected')}: ${sourceLangName} ${trackKindLabel}`,
       current: 0, total: state.progress.total,
     });
 
@@ -446,7 +569,7 @@ async function runTranslationCredits(tabId, settings) {
     if (alreadyTranslated.length > 0) {
       broadcast({
         type: MSG.TRANSLATION_PROGRESS,
-        langName: `💡 이미 ${alreadyTranslated.join(', ')} 언어로 번역된 자막이 있어 건너뜁니다.`,
+        langName: `${t('pgAlreadyA')}${alreadyTranslated.join(', ')}${t('pgAlreadyB')}`,
         current: 0, total: targetLangs.length,
       });
     }
@@ -463,17 +586,27 @@ async function runTranslationCredits(tabId, settings) {
       return;
     }
 
-    // 3-1. 이전 업로드 실패 번역 캐시 확인 → 해당 언어는 번역 생략하고 바로 업로드
+    // 3-1. 이전 번역 캐시 확인 → 완료된 청크는 재번역/재청구 없이 이어서 (재개형)
+    const total  = sourceSubtitles.length;
     const cached = await getSavedTranslations(videoId);
-    // 원본 자막 개수와 일치하는 캐시만 복원 (자막 수정 후 재시도 시 인덱스 엇갈림 방지)
-    const cachedLangs   = cached ? targetLangs.filter(c => cached.langResults?.[c]?.length === sourceSubtitles.length) : [];
-    let remainingLangs = targetLangs.filter(c => !cachedLangs.includes(c));
+    // 라인 단위로 복원 — 원본 길이와 맞는 캐시만(자막 수정 시 인덱스 엇갈림 방지). 빈칸(null)=미완.
+    const langResults = {};
+    for (const code of targetLangs) {
+      langResults[code] = new Array(total).fill(null);
+      const c = cached?.langResults?.[code];
+      if (Array.isArray(c) && c.length === total) {
+        for (let i = 0; i < total; i++) if (c[i] != null) langResults[code][i] = c[i];
+      }
+    }
+    const fullyCachedLangs = targetLangs.filter(c => isLangComplete(langResults[c], total));
+    let pendingLangs       = targetLangs.filter(c => !fullyCachedLangs.includes(c));
 
-    // 3-2. 시작 전 비용 추정 — 잔액으로 감당 가능한 언어 수만 번역 + 예상 차감액 안내
-    if (remainingLangs.length > 0 && pricing) {
+    // 3-2. 잔액으로 감당 가능한 언어 수만 번역 (예상 차감액 표기는 제거 — 실제 청구는
+    //      단계 배수·부분 캐시로 추정과 크게 달라져 오해 소지). 잔액 부족 시 언어 수만 조용히 조정.
+    if (pendingLangs.length > 0 && pricing) {
       const totalChars   = sourceSubtitles.reduce((s, x) => s + (x.text?.length || 0), 0);
       const estTokens    = Math.ceil(totalChars * 1.2); // 보수적 토큰 추정 (한국어 1자 ≈ 1토큰 + 여유분)
-      // 입력은 언어 3개씩 배치로 공유, 출력은 언어당 원문 분량만큼 발생
+      // 입력은 언어 배치로 공유, 출력은 언어당 원문 분량만큼 발생 (부분 캐시 시 실제 청구는 더 적음)
       const estCostPerLang =
         ((estTokens / MAX_LANGS_PER_CALL + 500) * pricing.input_per_m + estTokens * pricing.output_per_m)
         / 1_000_000 * pricing.multiplier
@@ -481,75 +614,63 @@ async function runTranslationCredits(tabId, settings) {
 
       const affordable = Math.floor(balance / estCostPerLang);
       if (affordable <= 0) throw new Error('INSUFFICIENT_CREDITS');
-      if (affordable < remainingLangs.length) {
-        const kept    = remainingLangs.slice(0, affordable);
-        const dropped = remainingLangs.slice(affordable)
+      if (affordable < pendingLangs.length) {
+        const kept    = pendingLangs.slice(0, affordable);
+        const dropped = pendingLangs.slice(affordable)
           .map(c => TARGET_LANGUAGES.find(l => l.code === c)?.name || c);
-        remainingLangs = kept;
+        pendingLangs = kept;
         broadcast({
           type: MSG.TRANSLATION_PROGRESS,
-          langName: `⚠️ 잔액 기준 ${affordable}개 언어만 번역합니다. 제외: ${dropped.join(', ')} — 충전 후 다시 시작하면 이어서 번역됩니다.`,
+          langName: `${t('pgAffA')}${affordable}${t('pgAffB')}${dropped.join(', ')}${t('pgAffC')}`,
           current: 0, total: targetLangs.length,
         });
       }
-
-      // 시작 전 예상 차감액 안내 (선불 차감형 서비스 — 사용자가 금액을 알고 시작하도록)
-      const estTotal = Math.round(estCostPerLang * remainingLangs.length);
-      broadcast({
-        type: MSG.TRANSLATION_PROGRESS,
-        langName: `💳 예상 차감 약 ${estTotal.toLocaleString('ko-KR')} 크레딧 (${remainingLangs.length}개 언어) · 실제 사용량 기준 정산`,
-        current: 0, total: targetLangs.length,
-      });
     }
 
     // 언어 칩 초기화용 — 번역 대상 언어 목록을 사이드바에 전달 (pending 칩 표시)
-    if (remainingLangs.length > 0 || cachedLangs.length > 0) {
+    if (pendingLangs.length > 0 || fullyCachedLangs.length > 0) {
       broadcast({
         type: MSG.TRANSLATION_PROGRESS,
-        langName: '번역을 시작합니다...',
+        langName: t('pgStarting'),
         current: 0, total: targetLangs.length,
-        targetLangs: [...remainingLangs, ...cachedLangs],
+        targetLangs: [...pendingLangs, ...fullyCachedLangs],
       });
     }
 
-    if (cachedLangs.length > 0) {
+    if (fullyCachedLangs.length > 0) {
       broadcast({
         type: MSG.TRANSLATION_PROGRESS,
-        langName: `💾 저장된 번역 발견 (${cachedLangs.map(c => TARGET_LANGUAGES.find(l=>l.code===c)?.name||c).join(', ')}) — 크레딧 없이 재업로드 시도`,
+        langName: `${t('pgCachedA')} (${fullyCachedLangs.map(c => TARGET_LANGUAGES.find(l=>l.code===c)?.name||c).join(', ')}) ${t('pgCachedB')}`,
         current: 0, total: targetLangs.length,
       });
     }
 
-    // 4. 신규 번역이 필요한 언어만 job 생성 + 번역 (캐시 언어는 건너뜀)
-    const langResults  = {};
-    const failedLangs  = new Set();
+    // 4. 미완 청크만 라운드 반복 번역 (재개형) — 완료 청크는 건너뛰고 남은 것만 처리
+    const failReasonByCode = {}; // 언어별 실패 사유 카테고리 (표시·운영 보고용)
     let chunksCompleted  = 0;
-    let totalChunks      = 0; // if 블록 안에서 재할당, 캐시 전용이면 0 유지
+    let totalChunks      = 0; // 첫 라운드 기준 총 콜 수 (진행바용). 캐시 전용이면 0.
     let totalInputTokens = 0, totalOutputTokens = 0;
 
-    if (remainingLangs.length > 0) {
+    if (pendingLangs.length > 0) {
       // 신규 번역이 있을 때만 잔액 검증 (캐시 재업로드는 크레딧 불필요)
       if (balance <= 0) throw new Error('INSUFFICIENT_CREDITS');
 
       const { job_id } = await createTranslationJob({
         video_id:    videoId,
         source_lang: trackInfo.language,
-        target_langs: remainingLangs,
+        target_langs: pendingLangs,
         model: 'gemini-2.5-flash',
       });
       jobId = job_id;
 
-      // 5. 자막 청크 + 언어 배치 분할 → 병렬 번역
-      const chunkSize      = getChunkSize(remainingLangs.length);
+      // 청크 경계는 전체 언어 수 기준으로 고정 — 재클릭마다 흔들리지 않게(재개 일관성)
+      const chunkSize      = getChunkSize(targetLangs.length);
       const subtitleChunks = chunkArray(sourceSubtitles, chunkSize);
-      const langBatches    = chunkArray(remainingLangs, MAX_LANGS_PER_CALL);
-      totalChunks          = subtitleChunks.length * langBatches.length;
-
-      for (const code of remainingLangs) langResults[code] = [];
+      totalChunks          = buildMissingPairs(pendingLangs, langResults, subtitleChunks, chunkSize).length;
 
       broadcast({
         type: MSG.TRANSLATION_PROGRESS,
-        langName: `번역 중... (0/${totalChunks} 청크)`,
+        langName: `${t('pgTranslating')} (0/${totalChunks})`,
         current: 0, total: totalChunks,
       });
 
@@ -560,146 +681,154 @@ async function runTranslationCredits(tabId, settings) {
         const sec = Math.round((Date.now() - startTime) / 1000);
         broadcast({
           type: MSG.TRANSLATION_PROGRESS,
-          langName: `번역 처리 중... (${sec}초 경과, AI 응답 대기)`,
+          langName: `${t('pgProcessing')} (${sec}${t('pgSecElapsed')})`,
           current: chunksCompleted, total: totalChunks,
         });
       }, 5000);
 
-      for (let si = 0; si < subtitleChunks.length; si += MAX_CONCURRENT) {
+      // 라운드: 1차 전체 → 남은 것만 보수 재처리. 3라운드 내 못 끝내면 재클릭이 이어받음.
+      let lastSaved = 0;
+      for (let round = 0; round < MAX_TRANSLATE_ROUNDS; round++) {
         if (state.shouldStop) break;
+        const pairs = buildMissingPairs(pendingLangs, langResults, subtitleChunks, chunkSize);
+        if (pairs.length === 0) break; // 전부 완성
 
-        const subBatch = subtitleChunks.slice(si, si + MAX_CONCURRENT);
-        const callPairs = [];
-        for (let bi = 0; bi < subBatch.length; bi++) {
-          for (const langBatch of langBatches) {
-            callPairs.push({ chunk: subBatch[bi], offset: (si + bi) * chunkSize, langBatch });
-          }
-        }
-
-        const results = await Promise.allSettled(
-          callPairs.map(({ chunk, offset, langBatch }) =>
-            translateChunk({
-              job_id:       jobId,
-              subtitles:    chunk.map(s => ({ text: s.text })),
-              offset,
-              target_langs: langBatch,
-              source_lang:  sourceLangName,
-              model:        'gemini-2.5-flash',
-            })
-          )
-        );
-
-        for (let ri = 0; ri < results.length; ri++) {
-          const result   = results[ri];
-          const { chunk, langBatch } = callPairs[ri];
-
-          if (result.status === 'fulfilled') {
-            const { translations, tokens } = result.value;
-            for (const code of langBatch) {
-              langResults[code].push(...(translations[code] || chunk.map(s => s.text)));
-            }
-            totalInputTokens  += tokens?.input  || 0;
-            totalOutputTokens += tokens?.output || 0;
-          } else {
-            for (const code of langBatch) failedLangs.add(code);
-            const chunkErr = result.reason?.message || '알 수 없는 오류';
-            log(`청크 번역 실패: ${chunkErr}`, LOG_LEVEL.WARN);
-            await reportError(result.reason || new Error(chunkErr), { action: 'chunk_translate', chunk: chunksCompleted });
-          }
-
-          chunksCompleted++;
+        if (round > 0) {
+          // 보수 라운드 — 부하가 가라앉을 시간을 준 뒤 남은 청크만 재처리
           broadcast({
             type: MSG.TRANSLATION_PROGRESS,
-            langName: `번역 중... (${chunksCompleted}/${totalChunks})`,
-            current: chunksCompleted, total: totalChunks,
-            isChunkUpdate: true, // 청크마다 로그 카드로 쌓이지 않도록 (라벨/진행바만 갱신)
+            langName: `${t('pgRepairing')} (${pairs.length})`,
+            current: chunksCompleted, total: totalChunks, isChunkUpdate: true,
           });
+          await new Promise(r => setTimeout(r, 3000));
+        }
+
+        for (let pi = 0; pi < pairs.length; pi += GEMINI_CONCURRENCY) {
+          if (state.shouldStop) break;
+          const slice = pairs.slice(pi, pi + GEMINI_CONCURRENCY);
+          const rs = await Promise.allSettled(
+            slice.map(p => translateChunkResilient({
+              job_id:       jobId,
+              subtitles:    p.chunk.map(s => ({ text: s.text })),
+              offset:       p.offset,
+              target_langs: p.langBatch,
+              source_lang:  sourceLangName,
+              model:        'gemini-2.5-flash',
+            }))
+          );
+
+          for (let k = 0; k < rs.length; k++) {
+            const r = rs[k], p = slice[k];
+            if (r.status === 'fulfilled') {
+              const { translations, tokens } = r.value;
+              for (const code of p.langBatch) {
+                const arr = translations?.[code] || [];
+                // 라인 단위 인덱스 배치 — 빈 자리만 채운다(순서 보존, 재개 시 안전)
+                for (let j = 0; j < p.chunk.length; j++) {
+                  if (arr[j] != null) langResults[code][p.offset + j] = arr[j];
+                }
+              }
+              totalInputTokens  += tokens?.input  || 0;
+              totalOutputTokens += tokens?.output || 0;
+            } else {
+              const chunkErr = r.reason?.message || '알 수 없는 오류';
+              for (const code of p.langBatch) failReasonByCode[code] = classifyFailure(chunkErr);
+              log(`청크 번역 실패: ${chunkErr}`, LOG_LEVEL.WARN);
+              await reportError(r.reason || new Error(chunkErr), { action: 'chunk_translate', chunk: chunksCompleted });
+            }
+
+            chunksCompleted++;
+            broadcast({
+              type: MSG.TRANSLATION_PROGRESS,
+              langName: `${t('pgTranslating')} (${Math.min(chunksCompleted, totalChunks)}/${totalChunks})`,
+              current: Math.min(chunksCompleted, totalChunks), total: totalChunks,
+              isChunkUpdate: true, // 청크마다 로그 카드로 쌓이지 않도록 (라벨/진행바만 갱신)
+            });
+          }
+
+          // 진행 저장(스로틀) — SW가 중간에 종료돼도 완료 청크는 보존, 재클릭이 이어받음
+          if (chunksCompleted - lastSaved >= PROGRESS_SAVE_EVERY) {
+            await saveTranslations(videoId, langResults, pendingLangs);
+            lastSaved = chunksCompleted;
+          }
         }
       }
       clearInterval(heartbeat);
+      // 라운드 종료 후 최종 진행분 저장 (부분 완성 포함 — 재클릭 시 남은 부분만 이어서)
+      await saveTranslations(videoId, langResults, pendingLangs);
     }
 
-    // 6. 언어별 YouTube 업로드
-    // 업로드 대상 = 방금 번역된 언어(remainingLangs) + 캐시 복원 언어(cachedLangs)
-    const allUploadLangs  = [...remainingLangs, ...cachedLangs];
-    const allLangResults  = { ...langResults, ...(cached?.langResults || {}) };
+    // 6. 완성된 언어만 YouTube 업로드 (신규 완성 + 캐시 완성). 미완 언어는 진행분을 남겨 재클릭 시 이어서.
+    const completeLangs   = targetLangs.filter(c => isLangComplete(langResults[c], total));
+    const incompleteLangs = pendingLangs.filter(c => !completeLangs.includes(c));
+    const allUploadLangs   = [...completeLangs, ...incompleteLangs]; // 이력 칩 표시용(미완=실패 칩)
     const errors = [];
 
     let uploadedCount = 0;
     const uploadSucceeded = []; // 캐시 삭제용
-    const uploadFailed    = []; // 캐시 저장용
 
-    for (const code of allUploadLangs) {
+    for (const code of completeLangs) {
       if (state.shouldStop) break;
 
       const lang = TARGET_LANGUAGES.find(l => l.code === code);
       if (!lang) continue;
 
-      // 번역 단계 실패 언어는 건너뜀 (캐시 복원 언어는 failedLangs에 없음)
-      if (failedLangs.has(code)) {
-        errors.push({ lang: lang.name, message: '번역 실패' });
-        continue;
-      }
-
       broadcast({
         type: MSG.TRANSLATION_PROGRESS,
-        lang: code, langName: `[${lang.name}] 업로드 중...`,
+        lang: code, langName: `[${lang.name}] ${t('pgUploading')}`,
         current: chunksCompleted, total: totalChunks,
       });
 
       try {
         const translated = sourceSubtitles.map((s, i) => ({
           ...s,
-          text: allLangResults[code]?.[i] ?? s.text,
+          text: langResults[code][i] ?? s.text,
         }));
         await uploadCaption(videoId, lang.ytCode, subtitlesToSRT(translated), existingCaptions);
         uploadedCount++;
         uploadSucceeded.push(code);
         broadcast({
           type: MSG.TRANSLATION_PROGRESS,
-          lang: code, langName: `[${lang.name}] 완료 ✓`,
+          lang: code, langName: `[${lang.name}] ${t('pgLangDone')}`,
           current: chunksCompleted, total: totalChunks,
           langDone: true,
         });
       } catch (err) {
-        uploadFailed.push(code);
         const detail = getUploadErrorMessage(err, lang.name);
-        errors.push({ lang: lang.name, message: detail });
+        errors.push({ lang: lang.name, message: detail, reason: classifyFailure(err?.message) });
         // perLang: 작업 전체 실패가 아니라 개별 언어 실패 — sidebar가 종료/이력저장 하지 않도록 구분
         broadcast({ type: MSG.TRANSLATION_ERROR, error: detail, lang: code, perLang: true });
       }
     }
 
-    // 중지로 업로드를 시도하지 못한 언어도 캐시 저장 대상에 포함 (번역 결과 유실 방지 — 과금은 이미 발생)
-    if (state.shouldStop) {
-      for (const code of allUploadLangs) {
-        if (!uploadSucceeded.includes(code) && !uploadFailed.includes(code) &&
-            !failedLangs.has(code) && allLangResults[code]?.length) {
-          uploadFailed.push(code);
-        }
-      }
+    // 미완 언어 안내 — 부분 완료. 진행분은 캐시에 남아, 다시 실행하면 남은 부분만 이어서 번역.
+    for (const code of incompleteLangs) {
+      const lang = TARGET_LANGUAGES.find(l => l.code === code);
+      if (!lang) continue;
+      errors.push({ lang: lang.name, message: t('pgPartial'), reason: failReasonByCode[code] || '일시적 오류' });
     }
 
-    // 업로드 성공 언어 캐시 삭제, 실패 언어 캐시 저장 (번역된 언어만)
+    // 업로드 성공(완성·등록 끝) 언어만 캐시에서 제거. 미완/업로드실패 언어의 진행분은 그대로 유지(재개용).
     await clearSavedTranslations(videoId, uploadSucceeded);
-    await saveTranslations(videoId, allLangResults, uploadFailed);
 
     // 6-1. 제목/설명 번역 (크레딧 모드 — 자막과 별도 mini job)
     let metaDone = false;
     let metaError = null;
+    let metaFailReason = null; // 제목/설명 실패 카테고리
     if ((settings.translateTitle || settings.translateDescription) && !state.shouldStop) {
       try {
         // 제목/설명의 기본 언어(영상 기본 언어 우선, 없으면 소스 트랙 언어)도 대상에서 제외
         const metaBaseLang = videoSnippet?.defaultLanguage || videoSnippet?.defaultAudioLanguage || trackInfo.language;
-        await translateAndUploadMetadataCredits(
+        // 반환값 = 실제로 제목/설명을 등록했는지 (전부 기등록이면 false → 이력에 허위 "등록" 표시 방지)
+        metaDone = await translateAndUploadMetadataCredits(
           videoId, videoSnippet, excludeBaseLang(settings.targetLangs, metaBaseLang),
           getLangName(trackInfo.language), settings,
           !jobId  // 자막 job이 없으면(제목/설명만) quota를 메타 job에서 정산
         );
-        metaDone = true;
       } catch (err) {
         // 402(크레딧 부족)를 "완료"로 삼키지 않도록 사용자에게 명시 (자막 성공분은 유지)
         const raw = err?.message || '';
+        metaFailReason = classifyFailure(raw);
         metaError = /402|insufficient_credits/i.test(raw)
           ? '크레딧이 부족해 제목/설명 번역을 완료하지 못했습니다. ⚙️ 설정에서 충전 후 다시 시도해 주세요.'
           : `제목/설명 번역에 실패했습니다: ${friendlyError(err)}`;
@@ -717,7 +846,8 @@ async function runTranslationCredits(tabId, settings) {
     if (jobId) {
       const finalStatus = state.shouldStop ? 'stopped' : 'completed';
       // 자막 job이 있으면 이번 실행의 전체 YouTube quota(unit)를 여기서 정산(units/10 크레딧 추가 차감)
-      await updateTranslationJob(jobId, { status: finalStatus, units: getUnitsUsed() })
+      // success(업로드 성공 언어 수)를 함께 보내 — 서버가 성공 0이면 과금 면제
+      await updateTranslationJob(jobId, { status: finalStatus, units: getUnitsUsed(), success: uploadedCount })
         .catch(e => log(`job 완료 처리 실패 (업로드는 완료됨): ${e.message}`, LOG_LEVEL.WARN));
     }
 
@@ -731,7 +861,44 @@ async function runTranslationCredits(tabId, settings) {
     }
 
     const successCount = uploadedCount;
-    await reportTranslationResult({ videoId, errors, total: allUploadLangs.length, success: successCount });
+
+    // 잔액 조회가 성공했을 때만 차감액 계산 (실패 시 null → 이력에 금액 미표시)
+    const creditsUsed = (creditsRemaining != null && balance != null)
+      ? Math.max(0, balance - creditsRemaining)
+      : null;
+
+    // ── 표시·운영 보고용 상세 집계 ──
+    const targetTypes = [
+      settings.translateSubtitles   && '자막',
+      settings.translateTitle       && '제목',
+      settings.translateDescription && '설명',
+    ].filter(Boolean);
+    const selLangNames = (settings.targetLangs || []).map(c =>
+      TARGET_LANGUAGES.find(l => l.code === c)?.nativeName || c);
+    const failNames   = errors.map(e => e.lang);
+    const failReasons = [...new Set(errors.map(e => e.reason).filter(Boolean))];
+    if (metaError) {
+      failNames.push('제목/설명');
+      if (metaFailReason && !failReasons.includes(metaFailReason)) failReasons.push(metaFailReason);
+    }
+    const subResult = {
+      ok:   uploadSucceeded.length, fail: errors.length,
+      skip: (alreadyTranslated || []).length, selected: (settings.targetLangs || []).length,
+    };
+
+    // 실패가 있을 때만 운영자 채널(텔레그램/Supabase)에 표 전체를 상세 보고 (사용자 식별자는 anon 유지)
+    if (errors.length || metaError) {
+      reportTranslationDetail({
+        videoId,
+        videoTitle: videoSnippet?.title || videoId,
+        targets:    targetTypes.join('·'),
+        langs:      selLangNames,
+        result:     `성공 ${subResult.ok}·건너뜀 ${subResult.skip}·실패 ${subResult.fail}/선택 ${subResult.selected}`,
+        failNames,
+        failReasons,
+        credits:    creditsUsed,
+      });
+    }
 
     // 처리 이력용 언어별 결과 (성공/실패)
     const historyItems = allUploadLangs.map(code => {
@@ -742,11 +909,6 @@ async function runTranslationCredits(tabId, settings) {
         ok:   uploadSucceeded.includes(code),
       };
     });
-    // 잔액 조회가 성공했을 때만 차감액 계산 (실패 시 null → 이력에 금액 미표시)
-    const creditsUsed = (creditsRemaining != null && balance != null)
-      ? Math.max(0, balance - creditsRemaining)
-      : null;
-
     const savedTabId   = state.tabId;
     const wasStopped   = state.shouldStop;
     resetState();
@@ -757,6 +919,11 @@ async function runTranslationCredits(tabId, settings) {
       videoTitle:   videoSnippet?.title || videoId,
       items:        historyItems,
       skippedLangs: alreadyTranslated || [],
+      targetTypes,                 // 번역 대상 (자막/제목/설명)
+      langNames:    selLangNames,  // 선택한 번역 언어 (표시용)
+      subResult,                   // { ok, fail, skip, selected }
+      failNames,                   // 실패 대상 (언어명 + '제목/설명')
+      failReasons,                 // 실패 사유 카테고리 (중복 제거)
       metaTitle:    metaDone && settings.translateTitle,
       metaDesc:     metaDone && settings.translateDescription,
       metaError,
@@ -847,7 +1014,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // 공지 목록 — 콘텐츠 스크립트(사이드바)는 CORS로 직접 호출 불가 → SW 경유(공개 API, 인증 불필요)
   if (message.type === 'GET_NOTICES') {
-    fetch(`${API_BASE}/notices?page=1`)
+    fetch(`${API_BASE}/notices?page=1&lang=${chrome.i18n.getUILanguage()}`)
       .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
       .then(data => sendResponse({ notices: data.notices || [] }))
       .catch(err => sendResponse({ notices: null, error: err.message }));
@@ -862,6 +1029,14 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
 
+  // 추천 코드 직접 입력 연결 (링크 미방문 구제) — 사용자 버튼 클릭이므로 대화형 허용
+  if (message.type === 'APPLY_REFERRAL') {
+    applyReferral(String(message.code || ''), true)
+      .then(r => sendResponse(r))
+      .catch(err => sendResponse({ ok: false, error: err.message }));
+    return true;
+  }
+
   // 원격 설정(kill-switch/배너) — 사이드바가 폴링
   if (message.type === 'GET_CONFIG') {
     getAppConfig()
@@ -872,7 +1047,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   // 공지 본문(상세)
   if (message.type === 'GET_NOTICE_DETAIL') {
-    fetch(`${API_BASE}/notices/${message.id}`)
+    fetch(`${API_BASE}/notices/${message.id}?lang=${chrome.i18n.getUILanguage()}`)
       .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))
       .then(data => sendResponse({ notice: data }))
       .catch(err => sendResponse({ notice: null, error: err.message }));

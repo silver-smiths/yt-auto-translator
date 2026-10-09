@@ -42,7 +42,18 @@ export async function fetchCredits(interactive = true) {
 export async function fetchReferral(interactive = false) {
   const res = await authFetch(`${API_BASE}/referral`, {}, interactive);
   if (!res.ok) throw new Error(`REFERRAL_FETCH_FAILED_${res.status}`);
-  return res.json(); // { referral_code, total_earned, referee_count, recent }
+  return res.json(); // { referral_code, referred, total_earned, referee_count, recent }
+}
+
+// 피추천인이 추천 코드를 직접 입력해 연결 (링크 미방문 구제).
+// throw 대신 {ok,status,error} 반환 — UI가 상태별 메시지를 표시하도록.
+export async function applyReferral(code, interactive = true) {
+  const res = await authFetch(`${API_BASE}/referral/apply`, {
+    method: 'POST',
+    body: JSON.stringify({ code }),
+  }, interactive);
+  const data = await res.json().catch(() => ({}));
+  return { ok: res.ok, status: res.status, error: data.error };
 }
 
 export async function createTranslationJob(params) {
@@ -61,7 +72,11 @@ export async function translateChunk(params) {
   });
   if (res.status === 402) throw new Error('INSUFFICIENT_CREDITS');
   if (res.status === 403) throw new Error('FORBIDDEN');
-  if (res.status === 504) throw new Error('ALL_FALLBACKS_FAILED');
+  if (res.status === 504) {
+    // 원인(rate_limit/timeout/http_xxx)을 메시지에 실어 진단 — ops/errors 리포트에 그대로 남는다
+    const reason = await res.json().then(b => b?.reason).catch(() => null);
+    throw new Error(reason ? `ALL_FALLBACKS_FAILED:${reason}` : 'ALL_FALLBACKS_FAILED');
+  }
   if (!res.ok) throw new Error(`TRANSLATE_CHUNK_FAILED_${res.status}`);
   return res.json(); // { translations, model_used, tokens }
 }

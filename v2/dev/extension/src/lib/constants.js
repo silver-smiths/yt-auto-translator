@@ -38,11 +38,13 @@ export const API_BASE = 'https://yt-auto-translator-api.1009yjh.workers.dev';
 export const PAYMENT_URL = 'https://silver-smiths.com/project/ytat-credits.html';
 
 // ── 언어 수 기반 동적 청크 크기 (크레딧 모드) ─────────────────────────────────
+// 호출당 자막 줄 수 — (줄 수 × MAX_LANGS_PER_CALL)이 25초(Vercel 한도) 안에 생성될 만큼 작아야
+// 긴/촘촘한 영상에서 타임아웃(ALL_FALLBACKS_FAILED)이 안 난다. 언어가 많을수록 더 작게.
 export function getChunkSize(langCount) {
-  if (langCount <= 3)  return 150;
-  if (langCount <= 8)  return 100;
-  if (langCount <= 15) return 80;
-  return 60;
+  if (langCount <= 3)  return 100;
+  if (langCount <= 8)  return 60;
+  if (langCount <= 15) return 40;
+  return 30;
 }
 
 // ── 기본 설정값 ───────────────────────────────────────────────────────────────

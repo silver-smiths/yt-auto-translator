@@ -1,15 +1,23 @@
 import { Hono } from 'hono';
 import { getSupabase } from '../lib/supabase.js';
 import { INPUT_PER_M, OUTPUT_PER_M, CREDIT_PER_USD, MAX_SUBTITLES, MAX_TARGET_LANGS, OVERDRAFT_CREDITS, UNITS_PER_CREDIT } from '../lib/constants.js';
+import { notifyError } from '../lib/errors.js';
 
 const app = new Hono();
 
 const GEMINI_V1BETA = 'https://generativelanguage.googleapis.com/v1beta';
 
+// 폴백 단계별 크레딧 배수 계수 (기본 배수 20배 대비): 1단계=20배(×1), 2단계=10배(×0.5), 3단계=5배(×0.25).
+// 재시도가 필요할수록 낮은 배수로 청구해 사용자 비용 폭증을 막고, 재시도 비용은 회사가 흡수.
+// 청크 전체 실패(tier 없음)는 결과물이 없으므로 0 → 과금하지 않음.
+const TIER_FACTOR = { 1: 1, 2: 0.5, 3: 0.25 };
+
+// 타임아웃 상향 — 성공콜 median이 ~19s라 25s는 여유가 없어 레이턴시 스파이크에서 잘림.
+// 릴레이(US Vercel)가 40s+를 허용하므로, 느리지만 유효한 생성이 끊기지 않게 넉넉히 준다.
 const FALLBACK_CHAIN = [
-  { model: 'gemini-2.5-flash', timeoutMs: 25_000, split: false, base: GEMINI_V1BETA },
-  { model: 'gemini-2.5-flash', timeoutMs: 18_000, split: true,  base: GEMINI_V1BETA }, // 절반 분할 병렬 재시도
-  { model: 'gemini-2.5-flash-lite', timeoutMs: 12_000, split: false, base: GEMINI_V1BETA }, // 경량 모델 최종 시도 (1.5-flash는 서비스 종료)
+  { model: 'gemini-2.5-flash', timeoutMs: 45_000, split: false, base: GEMINI_V1BETA },
+  { model: 'gemini-2.5-flash', timeoutMs: 30_000, split: true,  base: GEMINI_V1BETA }, // 절반 분할 병렬 재시도
+  { model: 'gemini-2.5-flash-lite', timeoutMs: 20_000, split: false, base: GEMINI_V1BETA }, // 경량 모델 최종 시도
 ];
 
 // ── 프롬프트 빌드 ──────────────────────────────────────────────────────────────
@@ -57,103 +65,119 @@ function validateAndRepair(json, subtitles, targetLangs) {
 
 // ── 단일 Gemini 호출 (JSON structured output) ──────────────────────────────────
 async function callGemini(env, model, subtitles, offset, targetLangs, sourceLang, timeoutMs, base = GEMINI_V1BETA) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const prompt = buildPrompt(subtitles, offset, targetLangs, sourceLang);
+  const schema = buildResponseSchema(targetLangs);
 
-  try {
-    const prompt = buildPrompt(subtitles, offset, targetLangs, sourceLang);
-    const schema = buildResponseSchema(targetLangs);
+  const geminiPayload = {
+    systemInstruction: {
+      parts: [{ text:
+        'You are a professional subtitle translator. ' +
+        'Return ONLY valid JSON matching the given schema. ' +
+        'Translate every single line. Never skip, merge, or deduplicate lines.'
+      }]
+    },
+    contents: [{ parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature:      0.2,
+      maxOutputTokens:  65536,
+      responseMimeType: 'application/json',
+      responseSchema:   schema,
+      thinkingConfig:   { thinkingBudget: 0 }, // 번역엔 불필요 — thinking 토큰($2.50/M) 비용 차단
+    },
+    safetySettings: [
+      { category: 'HARM_CATEGORY_HARASSMENT',        threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_HATE_SPEECH',       threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+      { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
+    ],
+  };
 
-    const geminiPayload = {
-      systemInstruction: {
-        parts: [{ text:
-          'You are a professional subtitle translator. ' +
-          'Return ONLY valid JSON matching the given schema. ' +
-          'Translate every single line. Never skip, merge, or deduplicate lines.'
-        }]
-      },
-      contents: [{ parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature:      0.2,
-        maxOutputTokens:  65536,
-        responseMimeType: 'application/json',
-        responseSchema:   schema,
-        thinkingConfig:   { thinkingBudget: 0 }, // 번역엔 불필요 — thinking 토큰($2.50/M) 비용 차단
-      },
-      safetySettings: [
-        { category: 'HARM_CATEGORY_HARASSMENT',        threshold: 'BLOCK_NONE' },
-        { category: 'HARM_CATEGORY_HATE_SPEECH',       threshold: 'BLOCK_NONE' },
-        { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
-        { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
-      ],
-    };
+  // 429(사용량 한도)·5xx(일시 서버오류)는 폴백 체인이 같은 키를 쓰므로 못 벗어난다 → 여기서 백오프 후 1회 재시도.
+  // 타임아웃/네트워크는 폴백·클라이언트 재시도에 맡긴다. 실패 시 원인(reason)을 실어 반환해 진단 가능하게.
+  const RETRYABLE = new Set([429, 500, 502, 503]);
+  let lastReason = 'unknown';
 
-    // Cloudflare Workers는 홍콩 콜로로 라우팅될 수 있어 Gemini가 지역 차단(400)함.
-    // GEMINI_RELAY_URL(미국 리전 고정 Vercel 함수)이 설정되면 그쪽을 경유한다.
-    const res = env.GEMINI_RELAY_URL
-      ? await fetch(env.GEMINI_RELAY_URL, {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json', 'x-relay-secret': env.GEMINI_RELAY_SECRET || '' },
-          signal:  controller.signal,
-          body: JSON.stringify({ model, base, payload: geminiPayload }),
-        })
-      : await fetch(`${base}/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`, {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal:  controller.signal,
-          body: JSON.stringify(geminiPayload),
-        });
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      // Cloudflare Workers는 홍콩 콜로로 라우팅될 수 있어 Gemini가 지역 차단(400)함.
+      // GEMINI_RELAY_URL(미국 리전 고정 Vercel 함수)이 설정되면 그쪽을 경유한다.
+      const res = env.GEMINI_RELAY_URL
+        ? await fetch(env.GEMINI_RELAY_URL, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', 'x-relay-secret': env.GEMINI_RELAY_SECRET || '' },
+            signal:  controller.signal,
+            body: JSON.stringify({ model, base, payload: geminiPayload }),
+          })
+        : await fetch(`${base}/models/${model}:generateContent?key=${env.GEMINI_API_KEY}`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal:  controller.signal,
+            body: JSON.stringify(geminiPayload),
+          });
 
-    clearTimeout(timer);
+      clearTimeout(timer);
 
-    if (!res.ok) {
-      const errBody = await res.json().catch(() => ({}));
-      console.error(`[Gemini] ${model} 실패 status=${res.status}`, JSON.stringify(errBody));
-      return null;
-    }
-
-    const data    = await res.json();
-    const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    const usage   = data.usageMetadata || {};
-
-    if (!rawText) {
-      console.error(`[Gemini] ${model} 응답 텍스트 없음`, JSON.stringify(data).slice(0, 300));
-      return null;
-    }
-
-    let json;
-    try { json = JSON.parse(rawText); } catch (e) {
-      console.error(`[Gemini] ${model} JSON 파싱 실패`, e.message, rawText?.slice(0, 200));
-      return null;
-    }
-
-    const repairedTranslations = validateAndRepair(json, subtitles, targetLangs);
-    const inputTokens  = usage.promptTokenCount || 0;
-    // thinking 토큰도 출력 단가로 과금되므로 합산 (thinkingBudget: 0이어도 방어적으로 포함)
-    const outputTokens = (usage.candidatesTokenCount || 0) + (usage.thoughtsTokenCount || 0);
-
-    // 번역 품질 검증: 단 1줄도 원본과 동일하면 폴백 트리거 (언어 문자 기준 비교)
-    // 단, 사용된 토큰은 반환해 과금에 포함 (failed: 'quality' 플래그)
-    for (const [lang, lines] of Object.entries(repairedTranslations)) {
-      const untranslated = lines.filter((line, i) => {
-        const orig = stripNonLetter(subtitles[i]?.text || '');
-        if (!orig) return false; // 숫자·기호만 있는 줄은 비교 제외
-        return stripNonLetter(line || '') === orig;
-      }).length;
-      // 고유명사·언어 간 동일 단어는 정상이므로 20% 이상(최소 2줄)일 때만 품질 실패 처리
-      const qualityThreshold = Math.max(2, Math.ceil(lines.length * 0.2));
-      if (untranslated >= qualityThreshold) {
-        console.error(`[Gemini] ${model} [${lang}] 번역 품질 불량: ${untranslated}/${lines.length} 줄이 원본과 동일(언어 문자 기준) → 폴백`);
-        return { failed: 'quality', inputTokens, outputTokens };
+      if (!res.ok) {
+        const errText = await res.text().catch(() => '');
+        lastReason = res.status === 429 ? 'rate_limit' : `http_${res.status}`;
+        console.error(`[Gemini] ${model} 실패 status=${res.status}`, errText.slice(0, 200));
+        if (RETRYABLE.has(res.status) && attempt === 0) {
+          const ra = Number(res.headers.get('retry-after')) || 3;
+          await new Promise(r => setTimeout(r, Math.min(ra, 6) * 1000)); // 백오프 후 1회 재시도
+          continue;
+        }
+        return { failed: lastReason, inputTokens: 0, outputTokens: 0 };
       }
-    }
 
-    return { translations: repairedTranslations, inputTokens, outputTokens };
-  } catch (err) {
-    clearTimeout(timer);
-    console.error('[Gemini] callGemini 예외:', err?.name, err?.message);
-    return null;
+      const data    = await res.json();
+      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+      const usage   = data.usageMetadata || {};
+
+      if (!rawText) {
+        console.error(`[Gemini] ${model} 응답 텍스트 없음`, JSON.stringify(data).slice(0, 300));
+        return { failed: 'empty', inputTokens: 0, outputTokens: 0 };
+      }
+
+      let json;
+      try { json = JSON.parse(rawText); } catch (e) {
+        console.error(`[Gemini] ${model} JSON 파싱 실패`, e.message, rawText?.slice(0, 200));
+        return { failed: 'parse', inputTokens: 0, outputTokens: 0 };
+      }
+
+      const repairedTranslations = validateAndRepair(json, subtitles, targetLangs);
+      const inputTokens  = usage.promptTokenCount || 0;
+      // thinking 토큰도 출력 단가로 과금되므로 합산 (thinkingBudget: 0이어도 방어적으로 포함)
+      const outputTokens = (usage.candidatesTokenCount || 0) + (usage.thoughtsTokenCount || 0);
+
+      // 번역 품질 검증: "모델이 사실상 번역을 안 하고 원문을 그대로 반환한 경우"만 폴백.
+      // 광고·기술 영상은 브랜드명(Google, AdSense)·숫자·짧은 감탄사 등 번역해도 원문과 같은 줄이 흔해,
+      // 낮은 임계값(과거 20%)은 정상 번역을 대량 거짓 불량 처리 → 긴 영상 전멸의 원인이었다.
+      // 70%(최소 6줄) 이상 동일할 때만 "미번역"으로 간주해 폴백한다. (일부 동일 줄은 정상)
+      for (const [lang, lines] of Object.entries(repairedTranslations)) {
+        const untranslated = lines.filter((line, i) => {
+          const orig = stripNonLetter(subtitles[i]?.text || '');
+          if (!orig) return false; // 숫자·기호만 있는 줄은 비교 제외
+          return stripNonLetter(line || '') === orig;
+        }).length;
+        const qualityThreshold = Math.max(6, Math.ceil(lines.length * 0.7));
+        if (untranslated >= qualityThreshold) {
+          console.error(`[Gemini] ${model} [${lang}] 미번역(원문 반환) ${untranslated}/${lines.length} → 폴백`);
+          return { failed: 'quality', inputTokens, outputTokens };
+        }
+      }
+
+      return { translations: repairedTranslations, inputTokens, outputTokens };
+    } catch (err) {
+      clearTimeout(timer);
+      lastReason = err?.name === 'AbortError' ? 'timeout' : 'network';
+      console.error('[Gemini] callGemini 예외:', err?.name, err?.message);
+      return { failed: lastReason, inputTokens: 0, outputTokens: 0 };
+    }
   }
+
+  return { failed: lastReason, inputTokens: 0, outputTokens: 0 };
 }
 
 // ── 3-tier 폴백 체인 ──────────────────────────────────────────────────────────
@@ -163,8 +187,11 @@ async function translateWithFallback(env, subtitles, offset, targetLangs, source
   const chain    = startIdx >= 0 ? FALLBACK_CHAIN.slice(startIdx) : FALLBACK_CHAIN;
 
   let totalInput = 0, totalOutput = 0;
+  let lastReason = 'unknown'; // 마지막 실패 원인 — 504에 실어 진단 가능하게
 
-  for (const { model, timeoutMs, split, base } of chain) {
+  for (let ci = 0; ci < chain.length; ci++) {
+    const { model, timeoutMs, split, base } = chain[ci];
+    const tier = startIdx + ci + 1; // 전체 폴백 체인 기준 단계 (1=원본, 2=분할, 3=경량)
     let result;
 
     if (split && subtitles.length > 1) {
@@ -175,30 +202,30 @@ async function translateWithFallback(env, subtitles, offset, targetLangs, source
       ]);
 
       // 토큰 항상 누적 (성공/품질실패 모두)
-      if (r1) { totalInput += r1.inputTokens; totalOutput += r1.outputTokens; }
-      if (r2) { totalInput += r2.inputTokens; totalOutput += r2.outputTokens; }
+      totalInput  += (r1.inputTokens || 0) + (r2.inputTokens || 0);
+      totalOutput += (r1.outputTokens || 0) + (r2.outputTokens || 0);
 
-      if (r1 && r2 && !r1.failed && !r2.failed) {
+      if (!r1.failed && !r2.failed) {
         const translations = {};
         for (const lang of targetLangs) {
           translations[lang] = [...r1.translations[lang], ...r2.translations[lang]];
         }
-        return { translations, model_used: model, inputTokens: totalInput, outputTokens: totalOutput };
+        return { translations, model_used: model, tier, inputTokens: totalInput, outputTokens: totalOutput };
       }
+      lastReason = r1.failed || r2.failed || lastReason;
     } else {
       result = await callGemini(env, model, subtitles, offset, targetLangs, sourceLang, timeoutMs, base);
-      if (result) {
-        totalInput  += result.inputTokens;
-        totalOutput += result.outputTokens;
-        if (!result.failed) {
-          return { translations: result.translations, model_used: model, inputTokens: totalInput, outputTokens: totalOutput };
-        }
+      totalInput  += result.inputTokens  || 0;
+      totalOutput += result.outputTokens || 0;
+      if (!result.failed) {
+        return { translations: result.translations, model_used: model, tier, inputTokens: totalInput, outputTokens: totalOutput };
       }
+      lastReason = result.failed || lastReason;
     }
   }
 
-  // 전부 실패 — 호출부에서 model_used === null 체크 후 504 반환
-  return { translations: null, model_used: null, inputTokens: totalInput, outputTokens: totalOutput };
+  // 전부 실패 — 호출부에서 model_used === null 체크 후 504 반환 (reason 포함)
+  return { translations: null, model_used: null, tier: null, reason: lastReason, inputTokens: totalInput, outputTokens: totalOutput };
 }
 
 // ── POST /translate/chunk ─────────────────────────────────────────────────────
@@ -245,26 +272,29 @@ app.post('/chunk', async (c) => {
 
   // 번역 (폴백 포함)
   const preferredModel = model || c.env.GEMINI_MODEL;
-  const { translations, model_used, inputTokens, outputTokens } =
+  const { translations, model_used, tier, reason, inputTokens, outputTokens } =
     await translateWithFallback(c.env, subtitles, offset, target_langs, source_lang, preferredModel);
 
   const apiCostUsd = (inputTokens * INPUT_PER_M + outputTokens * OUTPUT_PER_M) / 1_000_000;
+  // 성공한 단계의 배수로 청구 크레딧 산정. 실패 청크(tier 없음)는 결과물이 없으므로 0(무과금).
+  const tierFactor = tier ? (TIER_FACTOR[tier] ?? 1) : 0;
 
-  // 토큰 사용량 기록 (성공/실패 무관 — 과금 기준). rpc는 throw하지 않으므로 error 검사 필수.
+  // 토큰 사용량 기록 (실비는 통계용으로 항상, 청구 크레딧은 단계 배수 반영). rpc는 throw하지 않으므로 error 검사 필수.
   if (inputTokens > 0 || outputTokens > 0) {
     const { error: incError } = await sb.rpc('increment_job_tokens', {
       p_job_id:        job_id,
       p_input_tokens:  inputTokens,
       p_output_tokens: outputTokens,
-      p_api_cost:      apiCostUsd,                 // 실비(USD) — cumulative_used·통계용
-      p_credits:       apiCostUsd * CREDIT_PER_USD, // 청구 크레딧(원)
+      p_api_cost:      apiCostUsd,                            // 실비(USD) — cumulative_used·통계용
+      p_credits:       apiCostUsd * CREDIT_PER_USD * tierFactor, // 청구 크레딧(원) — 단계 배수 반영
     });
-    if (incError) console.error('[chunk] increment_job_tokens 실패:', incError.message, { job_id });
+    if (incError) await notifyError(c.env, 'translate/increment_job_tokens', new Error(incError.message), { job_id });
   }
 
-  // 전부 실패 시 504 (토큰은 기록됐으므로 PATCH failed 시 차감됨)
+  // 전부 실패 시 504 — 원인(reason: rate_limit/timeout/http_xxx 등)을 실어 진단 가능하게
   if (model_used === null) {
-    return c.json({ error: 'ALL_FALLBACKS_FAILED' }, 504);
+    await notifyError(c.env, 'translate/ALL_FALLBACKS_FAILED', new Error(`ALL_FALLBACKS_FAILED reason=${reason}`), { job_id, langs: target_langs.length, lines: subtitles.length });
+    return c.json({ error: 'ALL_FALLBACKS_FAILED', reason: reason || 'unknown' }, 504);
   }
 
   return c.json({
@@ -349,7 +379,7 @@ app.post('/job', async (c) => {
 app.patch('/job/:id', async (c) => {
   const userId = c.get('userId');
   const jobId  = c.req.param('id');
-  const { status, error_message, units } = await c.req.json();
+  const { status, error_message, units, success } = await c.req.json();
   if (!['completed', 'failed', 'stopped'].includes(status)) {
     return c.json({ error: 'INVALID_STATUS' }, 400);
   }
@@ -379,6 +409,14 @@ app.patch('/job/:id', async (c) => {
     })
     .eq('id', jobId);
 
+  // 결과물 0(성공 언어 0) → 과금 면제. 실패한 번역은 청구하지 않는다(사용자 보호).
+  //   자막/제목·설명이 하나도 등록 안 됐으면 Gemini 토큰을 썼더라도 사용자에겐 청구 X.
+  //   settled 표시(deducted_at)만 남겨 미정산 스위퍼가 다시 청구하지 않게 한다.
+  if (['completed', 'failed', 'stopped'].includes(status) && Number(success) === 0 && !job.deducted_at) {
+    await sb.from('translation_jobs').update({ deducted_at: new Date().toISOString() }).eq('id', jobId);
+    return c.json({ ok: true, waived: true });
+  }
+
   // 완료/실패/중단 시 크레딧 차감 (idempotency: deducted_at으로 이중 차감 방지)
   if (['completed', 'failed', 'stopped'].includes(status) && (job.api_cost_usd > 0 || quotaCredits > 0) && !job.deducted_at) {
     // supabase-js rpc는 throw하지 않고 {error}를 반환하므로 반드시 error를 검사해야 함.
@@ -391,7 +429,7 @@ app.patch('/job/:id', async (c) => {
       p_quota_credits: quotaCredits,    // YouTube quota 차감 크레딧(units/10)
     });
     if (deductError) {
-      console.error('[PATCH] deduct_credits 실패:', deductError.message, { jobId, userId });
+      await notifyError(c.env, 'translate/deduct_credits', new Error(deductError.message), { jobId, userId });
       // deducted_at 미기록 → 재전송/재호출 시 재시도 가능
     } else {
       await sb

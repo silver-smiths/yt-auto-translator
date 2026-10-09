@@ -9,79 +9,87 @@
 <body>
 
 <div class="container">
-  <h1>⚙️ 설정</h1>
+  <h1>⚙️ <span data-i18n="optHeading">설정</span></h1>
 
   <!-- ── 웰컴 카드 (최초 설치 시만 표시) ── -->
   <div class="welcome-card" id="welcomeCard">
-    <button class="welcome-close" id="btnDismissWelcome" title="닫기">×</button>
-    <div class="welcome-title">YouTube 자막 번역을 자동화하세요 🚀</div>
+    <button class="welcome-close" id="btnDismissWelcome" data-i18n-title="closeLabel" title="닫기">×</button>
+    <div class="welcome-title" data-i18n="welTitle">YouTube 자막 번역을 자동화하세요 🚀</div>
     <div class="welcome-features">
       <div class="welcome-feature">
-        <span class="welcome-feature-icon">🌍</span>
-        <span>AI가 <strong>26개 언어 자막·제목·설명</strong>을 한 번에 자동 번역</span>
+        <span class="welcome-feature-icon">⚡</span>
+        <span data-i18n-html="welFeat1">간단한 설정과 <strong>▶ 번역 시작</strong> 한 번이면 번역부터 YouTube 등록까지 자동으로</span>
       </div>
       <div class="welcome-feature">
-        <span class="welcome-feature-icon">📤</span>
-        <span>번역 결과가 <strong>YouTube Studio에 직접 등록</strong> — 파일 작업 없음</span>
+        <span class="welcome-feature-icon">🌍</span>
+        <span data-i18n-html="welFeat2">AI가 <strong>15개 언어</strong>로 자막·제목·설명을 번역해 드립니다</span>
+      </div>
+      <div class="welcome-feature">
+        <span class="welcome-feature-icon">📌</span>
+        <span data-i18n-html="welFeat3"><strong>YouTube Studio 영상 편집 페이지</strong>를 열면 사이드바가 자동으로 나타납니다</span>
       </div>
       <div class="welcome-feature">
         <span class="welcome-feature-icon">💳</span>
-        <span>크레딧 충전 후 <strong>YouTube Studio 영상 편집 페이지</strong>에서 번역을 시작하세요</span>
+        <span data-i18n-html="welFeat4">받은 <strong>무료 크레딧</strong>으로 번역 언어를 선택하고 바로 시작하세요</span>
       </div>
     </div>
+
+    <!-- 로그인 + 무료체험 크레딧 수령 (계정당 1회) -->
+    <button class="welcome-hero-btn" id="btnWelcomeClaim" data-i18n="welLoginClaimBtn">🎁 로그인하고 무료체험 크레딧 받기</button>
+    <div class="welcome-claim-status" id="welcomeClaimStatus" style="display:none;"></div>
   </div>
 
   <!-- ── 크레딧 ── -->
   <section class="section">
-    <label class="label">💳 크레딧</label>
+    <label class="label" data-i18n="credHeading">💳 크레딧</label>
     <div class="credit-balance-card">
       <div>
-        <div class="credit-balance-label">크레딧 잔액</div>
-        <div class="credit-balance-amount" id="creditBalance">로딩 중...</div>
+        <div class="credit-balance-label" data-i18n="credBalanceLabel">크레딧 잔액</div>
+        <div class="credit-balance-amount" id="creditBalance" data-i18n="credLoading">로딩 중...</div>
       </div>
-      <button class="btn-topup" id="btnTopup">충전하기</button>
+      <button class="btn-topup" id="btnTopup" data-i18n="btnTopup">충전하기</button>
     </div>
-    <p class="hint" style="margin-top:6px;">사용한 만큼만 차감됩니다. 최적 성능의 AI 모델이 자동 적용됩니다.</p>
+    <p class="hint" style="margin-top:6px;" data-i18n="credHint">사용한 만큼만 차감됩니다. 최적 성능의 AI 모델이 자동 적용됩니다.</p>
   </section>
 
   <!-- ── 번역 대상 ── -->
   <section class="section">
-    <label class="label">📝 번역 대상</label>
+    <label class="label" data-i18n="targetHeading">📝 번역 대상</label>
     <div class="translate-targets">
       <label class="target-option">
         <input type="checkbox" id="translateSubtitles" checked>
-        <span>자막</span>
+        <span data-i18n="targetSubtitles">자막</span>
       </label>
       <label class="target-option">
         <input type="checkbox" id="translateTitle" checked>
-        <span>제목</span>
+        <span data-i18n="targetTitleField">제목</span>
       </label>
       <label class="target-option">
         <input type="checkbox" id="translateDescription" checked>
-        <span>설명</span>
+        <span data-i18n="targetDescField">설명</span>
       </label>
     </div>
-    <p class="hint">제목/설명은 YouTube의 언어별 다국어 설정(localizations)으로 자동 적용됩니다.</p>
+    <p class="hint" data-i18n="targetHint">제목/설명은 YouTube의 언어별 다국어 설정(localizations)으로 자동 적용됩니다.</p>
   </section>
 
   <!-- ── 원본 자막 언어 ── -->
   <section class="section">
-    <label class="label">🎙 원본 자막 언어</label>
+    <label class="label" data-i18n="sourceHeading">🎙 원본 자막 언어</label>
     <select id="sourceLang" class="select"></select>
-    <p class="hint">자동 감지를 선택하면 영상의 기본 자막 언어를 자동으로 찾습니다.</p>
+    <p class="hint" data-i18n="sourceHint">자동 감지를 선택하면 영상의 기본 자막 언어를 자동으로 찾습니다.</p>
   </section>
 
   <!-- ── 번역 언어 ── -->
   <section class="section">
     <div class="lang-header">
-      <label class="label" style="margin-bottom:0">번역 언어</label>
+      <label class="label" style="margin-bottom:0" data-i18n="langHeading">번역 언어</label>
       <div class="lang-controls">
-        <button class="btn-small" id="btnSelectAll">전체 선택</button>
-        <button class="btn-small" id="btnDeselectAll">전체 해제</button>
+        <button class="btn-small" id="btnSelectAll" data-i18n="selectAll">전체 선택</button>
+        <button class="btn-small" id="btnDeselectAll" data-i18n="deselectAll">전체 해제</button>
       </div>
     </div>
 
-    <div class="notice notice-success" id="langNotice">
+    <div class="notice notice-success" id="langNotice" data-i18n="langNotice">
       ✅ 선택한 언어로 자막·제목·설명을 번역합니다. 영상의 기본 언어는 자동으로 제외됩니다.
     </div>
 
@@ -90,54 +98,53 @@
 
   <!-- ── 친구 추천 ── -->
   <section class="section" id="referralSection">
-    <label class="label">🎁 친구 추천</label>
-    <p class="hint">내 링크로 가입한 분이 번역을 사용하면, 소진액의 <strong>10%</strong>가 내 크레딧으로 적립됩니다. (추천 후 12개월)</p>
-    <div id="referralBody" style="margin-top:8px;font-size:13px;color:var(--text-secondary);">불러오는 중...</div>
+    <label class="label" data-i18n="referralHeading">🎁 친구 추천</label>
+    <p class="hint" data-i18n-html="referralHint">내 링크로 가입한 분이 번역을 사용하면, 소진액의 <strong>10%</strong>가 내 크레딧으로 적립됩니다. (추천 후 12개월)</p>
+    <div id="referralBody" style="margin-top:8px;font-size:13px;color:var(--text-secondary);" data-i18n="referralLoading">불러오는 중...</div>
   </section>
 
-  <!-- ── AI 번역 면책 고지 ── -->
-  <div class="notice notice-info" style="margin-top:8px;">
-    🤖 <strong>AI 번역 안내</strong> — 이 확장 프로그램은 AI(Gemini)가 자막을 번역합니다.
-    AI는 문맥·뉘앙스·전문 용어에서 오역이 발생할 수 있습니다.
-    <strong>업로드 전 번역 결과를 반드시 검토</strong>해 주세요.
-  </div>
+  <!-- ── AI 번역 안내 ── -->
+  <p class="hint" style="margin-top:8px;" data-i18n="aiNoticeOptions">
+    AI 번역 안내 — 자막·제목·설명은 AI가 번역하며, AI는 실수를 할 수 있습니다.
+  </p>
 </div>
 
 <!-- ── 플로팅 저장 버튼 ── -->
 <div class="actions">
-  <button class="btn btn-primary" id="btnSave">저장</button>
+  <button class="btn btn-primary" id="btnSave" data-i18n="btnSave">저장</button>
+  <button class="btn btn-secondary" id="btnCloseOptions" data-i18n="btnCloseSettings">설정 닫기</button>
   <span class="save-status" id="saveStatus"></span>
 </div>
 
 <!-- ── 플로팅 피드백 버튼 ── -->
 <a class="btn-feedback" id="btnFeedback" href="https://forms.gle/yQkUQJJW3eX2A8AeA" target="_blank" rel="noopener noreferrer">
   📝
-  <span class="btn-feedback-tooltip">문의하기 / Feedback</span>
+  <span class="btn-feedback-tooltip" data-i18n="feedbackTooltip">문의하기 / Feedback</span>
 </a>
 
 <!-- ── 플로팅 관리자 버튼 (어드민 계정에게만 노출) ── -->
 <a id="btnAdmin" class="btn-admin" href="https://silver-smiths.com/project/ytat-admin.html" target="_blank" rel="noopener noreferrer" style="display:none;">
   🛠
-  <span class="btn-admin-tooltip">관리자 페이지</span>
+  <span class="btn-admin-tooltip" data-i18n="adminTooltip">관리자 페이지</span>
 </a>
 
 <!-- ── 플로팅 공지사항 버튼 ── -->
 <button id="btnNotice" class="btn-notice">
   🔔
   <span class="notice-badge" id="noticeBadge" style="display:none;">N</span>
-  <span class="btn-notice-tooltip">공지사항 펼치기</span>
+  <span class="btn-notice-tooltip" data-i18n="noticeTooltip">공지사항 펼치기</span>
 </button>
 
 <!-- ── 공지사항 모달 ── -->
 <div id="noticeModal" class="notice-modal" style="display:none;">
   <div class="notice-modal-inner">
     <div class="notice-modal-header">
-      <span>📢 공지사항</span>
+      <span data-i18n="noticeModalTitle">📢 공지사항</span>
       <button id="noticeClose" class="notice-close">✕</button>
     </div>
     <ul id="noticeList" class="notice-list"></ul>
     <div id="noticeDetail" class="notice-detail" style="display:none;">
-      <button id="noticeBack" class="notice-back">← 목록</button>
+      <button id="noticeBack" class="notice-back" data-i18n="noticeBack">← 목록</button>
       <h3 id="noticeDetailTitle"></h3>
       <div id="noticeDetailBody"></div>
     </div>

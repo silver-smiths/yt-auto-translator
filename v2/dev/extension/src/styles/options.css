@@ -109,6 +109,40 @@ hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
 }
 .welcome-cta:hover { background: var(--primary-hover); }
 
+/* 로그인 유도 히어로 버튼 — 크고 눈에 띄게 */
+.welcome-hero-btn {
+  display: block; width: 100%;
+  background: linear-gradient(135deg, #1a73e8 0%, #065fd4 100%);
+  color: #fff; border: none;
+  padding: 15px 18px;
+  border-radius: 10px;
+  font-size: 15px; font-weight: 800; letter-spacing: -0.2px;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(6,95,212,0.35);
+  transition: transform 0.12s ease, box-shadow 0.2s;
+  animation: welcomePulse 2.2s ease-in-out infinite;
+}
+.welcome-hero-btn:hover {
+  box-shadow: 0 6px 20px rgba(6,95,212,0.45);
+  transform: translateY(-1px);
+}
+.welcome-hero-btn:disabled {
+  opacity: 0.7; cursor: default;
+  animation: none; box-shadow: none; transform: none;
+}
+@keyframes welcomePulse {
+  0%, 100% { box-shadow: 0 4px 14px rgba(6,95,212,0.35); }
+  50%      { box-shadow: 0 4px 22px rgba(6,95,212,0.55); }
+}
+
+.welcome-claim-status {
+  margin-top: 12px;
+  font-size: 13px; font-weight: 700;
+  color: #0d7a3f;
+  text-align: center;
+}
+.welcome-claim-status.is-error { color: #c0392b; }
+
 .welcome-note {
   font-size: 12px; color: #6b8ab8;
   margin-top: 10px;
@@ -632,6 +666,12 @@ hr { border: none; border-top: 1px solid var(--border); margin: 24px 0; }
 }
 .btn-primary:hover { background: var(--primary-hover); }
 .btn-primary:disabled { background: #b0b0b0; cursor: not-allowed; }
+
+.btn-secondary {
+  background: var(--bg-secondary); color: var(--text);
+  border: 1px solid var(--border);
+}
+.btn-secondary:hover { background: var(--border); }
 
 .save-status {
   font-size: 13px;

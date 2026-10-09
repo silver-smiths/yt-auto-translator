@@ -110,6 +110,21 @@ export async function reportTranslationResult({ videoId, errors, total, success 
   });
 }
 
+/**
+ * 번역 실패 상세 리포트 (운영자용) — 표 전체를 context로 전송.
+ * 텔레그램/Supabase에 상세가 남고, 사용자 식별자는 anon_hash만.
+ */
+export async function reportTranslationDetail(detail) {
+  const reasons = (detail?.failReasons || []).join(', ') || '오류';
+  await sendToOps({
+    message: `번역 실패: ${reasons}`,
+    tag:     'translation_detail',
+    action:  'translation_detail',
+    feature: 'translation',
+    detail,
+  });
+}
+
 // =============================================
 // 로그 조회 / 삭제 (Options 페이지용)
 // =============================================
@@ -152,8 +167,8 @@ async function getAnonId() {
   } catch { return ''; }
 }
 
-// PII 스크럽: message는 앞부분만, context는 안전 필드(action/at/feature/lang)만 전송.
-async function sendToOps({ message, stack, tag, action, at, feature, lang }) {
+// 사용자 식별자는 anon_hash로만 전송. detail(운영자용 상세 표)이 있으면 context에 함께 실음.
+async function sendToOps({ message, stack, tag, action, at, feature, lang, detail }) {
   try {
     await fetch(`${API_BASE}/ops/errors`, {
       method:  'POST',
@@ -166,7 +181,9 @@ async function sendToOps({ message, stack, tag, action, at, feature, lang }) {
         message:     String(message || '').slice(0, 500),
         anon_hash:   await getAnonId(),
         context:     { action: action || undefined, at: at || undefined,
-                       feature: feature || undefined, lang: lang || undefined },
+                       feature: feature || undefined, lang: lang || undefined,
+                       ...(stack ? { stack: String(stack).slice(0, 600) } : {}),
+                       ...(detail ? { detail } : {}) },
       }),
     });
   } catch { /* 전송 실패는 조용히 — 에러 알림 실패로 또 다른 에러 유발 방지 */ }

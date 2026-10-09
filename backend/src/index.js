@@ -11,6 +11,7 @@ import authRouter      from './routes/auth.js';
 import geminiRelayRouter from './routes/gemini-relay.js';
 import opsRouter, { runAutoHeal } from './routes/ops.js';
 import referralRouter, { runReferralAccrual } from './routes/referral.js';
+import { notifyError } from './lib/errors.js';
 
 const app = new Hono();
 
@@ -29,6 +30,13 @@ app.use('*', cors({
 
 // ── 헬스체크 ──────────────────────────────────────────────
 app.get('/health', (c) => c.json({ ok: true, version: '1.0.0' }));
+
+// ── PayPal 공개 설정 (결제 페이지 SDK 로드용 — client_id는 공개값) ──
+app.get('/paypal/config', (c) => c.json({
+  client_id: c.env.PAYPAL_CLIENT_ID || '',
+  env:       c.env.PAYPAL_ENV || 'sandbox',
+  min_usd:   5,
+}));
 
 // ── 웹훅 (인증 불필요 — Portone이 직접 호출) ─────────────
 app.route('/webhook', webhookRouter);
@@ -67,7 +75,10 @@ app.route('/referral',  referralRouter);
 // ── 404 ───────────────────────────────────────────────────
 app.notFound((c) => c.json({ error: 'NOT_FOUND' }, 404));
 app.onError((err, c) => {
-  console.error('[API Error]', err);
+  // 미처리 예외 전부 텔레그램으로 (응답은 막지 않도록 waitUntil로 후처리)
+  const scope = `unhandled ${c.req.method} ${new URL(c.req.url).pathname}`;
+  const p = notifyError(c.env, scope, err);
+  c.executionCtx?.waitUntil?.(p);
   const isDev = c.env?.ENVIRONMENT !== 'production';
   return c.json({
     error: 'SERVER_ERROR',

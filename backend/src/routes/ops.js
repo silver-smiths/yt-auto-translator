@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { getSupabase } from '../lib/supabase.js';
+import { tgSafe, tgEscape } from '../lib/errors.js';
 
 const router = new Hono();
 
@@ -43,7 +44,26 @@ router.post('/errors', async (c) => {
   if (error) return c.json({ error: 'SERVER_ERROR' }, 500);
 
   // 신규 지문만 알림(같은 오류 도배 방지). 재발은 집계만 증가.
-  if (isNew) await notify(c.env, `🐞 [YTAT/${source}] 새 오류\n\`${fingerprint}\`\n${message || '(no message)'}`);
+  if (isNew) {
+    // /ops/errors는 공개(비인증) → 클라이언트 입력(message·stack·detail)을 텔레그램(Markdown)에 넣기 전
+    // 토큰·이메일 마스킹 + Markdown 이스케이프 (운영자 채널로의 주입/민감정보 유출 방지)
+    const safe = tgSafe;
+    let text = `🐞 [YTAT/${source}] 새 오류\n\`${fingerprint}\`\n${safe(message) || '(no message)'}`;
+    const d = (context && typeof context === 'object') ? context.detail : null;
+    if (d) {
+      text += `\n\n🎯 대상: ${safe(d.targets) || '-'}` +
+              `\n🌐 언어: ${safe((d.langs || []).join(', ')) || '-'}` +
+              `\n📊 결과: ${safe(d.result) || '-'}`;
+      if (d.failNames?.length)   text += `\n❌ 실패대상: ${safe(d.failNames.join(', '))}`;
+      if (d.failReasons?.length) text += `\n⚠️ 실패사유: ${safe(d.failReasons.join(', '))}`;
+      if (d.videoId)             text += `\n📹 영상: ${safe(d.videoTitle)} (${safe(d.videoId)})`;
+      if (d.credits != null)     text += `\n💰 비용: ${safe(d.credits)} 크레딧`;
+    }
+    // 번역 상세가 없는 일반 에러는 스택을 실어 원인 파악 가능하게
+    const st = (context && typeof context === 'object') ? context.stack : null;
+    if (st && !d) text += `\n\n${safe(String(st).slice(0, 600))}`;
+    await notify(c.env, text);
+  }
   return c.json({ ok: true });
 });
 
@@ -71,7 +91,7 @@ router.patch('/config', async (c) => {
   );
   if (error) return c.json({ error: 'SERVER_ERROR' }, 500);
 
-  await notify(c.env, `⚙️ [YTAT] 설정 변경: \`${key}\` = ${JSON.stringify(value)} (by ${c.get('email') || '?'})`);
+  await notify(c.env, `⚙️ [YTAT] 설정 변경: \`${tgSafe(key)}\` = ${tgSafe(JSON.stringify(value))} (by ${tgEscape(c.get('email') || '?')})`);
   return c.json({ ok: true });
 });
 
@@ -117,7 +137,7 @@ export async function runAutoHeal(env) {
 
     if (!switchKey) {
       // 결제·마스터·미지 기능 → 자동 플립 금지, 알림만
-      await notify(env, `⚠️ [YTAT/감시] '${feature}' 오류 급증 (${agg.count}건/${agg.users.size}명, ${windowMin}분). 수동 점검 권장.`);
+      await notify(env, `⚠️ [YTAT/감시] '${tgSafe(feature)}' 오류 급증 (${agg.count}건/${agg.users.size}명, ${windowMin}분). 수동 점검 권장.`);
       await sb.from('ops_actions').insert({ action: 'auto_alert', target: feature, reason: `${agg.count}건/${agg.users.size}명` });
       continue;
     }
@@ -132,7 +152,7 @@ export async function runAutoHeal(env) {
       { key: switchKey, value: false, updated_at: new Date().toISOString(), updated_by: 'autoheal' },
       { onConflict: 'key' });
     await sb.from('ops_actions').insert({ action: 'auto_disable', target: switchKey, reason: `${agg.count}건/${agg.users.size}명 (${windowMin}분)` });
-    await notify(env, `🔧 [YTAT/자동수복] '${feature}' 오류 급증 → \`${switchKey}\` 자동 OFF (${agg.count}건/${agg.users.size}명). 수정 후 어드민에서 재활성 필요.`);
+    await notify(env, `🔧 [YTAT/자동수복] '${tgSafe(feature)}' 오류 급증 → \`${switchKey}\` 자동 OFF (${agg.count}건/${agg.users.size}명). 수정 후 어드민에서 재활성 필요.`);
     actions.push(switchKey);
   }
   return { actions, checked: Object.keys(byFeature).length };

@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { getSupabase } from '../lib/supabase.js';
+import { notifyError } from '../lib/errors.js';
 
 const router = new Hono();
 
@@ -43,8 +44,9 @@ router.get('/', async (c) => {
   const sb = getSupabase(c.env);
 
   // 추천 코드가 없으면 생성(최초 조회 시). 희박한 충돌은 1회 재시도.
-  const { data: u } = await sb.from('users').select('referral_code').eq('id', userId).single();
+  const { data: u } = await sb.from('users').select('referral_code, referred_by').eq('id', userId).single();
   let code = u?.referral_code;
+  const referred = !!u?.referred_by; // 이미 추천 코드로 연결됐는지 (입력창 노출 판단용)
   if (!code) {
     for (let i = 0; i < 2 && !code; i++) {
       const candidate = genReferralCode();
@@ -71,6 +73,7 @@ router.get('/', async (c) => {
 
   return c.json({
     referral_code: code || null,     // 공유 링크: PAYMENT_URL?ref=<code> (익스텐션에서 조합)
+    referred,                        // 내가 이미 추천 코드로 연결됐는지
     total_earned: Math.round(Number(s.total_earned || 0)),
     referee_count: Number(s.referee_count || 0),
     recent: (rewards || []).map(r => ({ date: r.reward_date, amount: Math.round(Number(r.amount_krw || 0)) })),
@@ -104,7 +107,7 @@ export async function runReferralAccrual(env) {
   for (let back = 1; back <= 3; back++) {
     const date = kstDateBack(back);
     const { error } = await sb.rpc('accrue_referral_rewards', { p_date: date });
-    if (error) console.error('[referral accrual]', date, error.message);
+    if (error) await notifyError(env, 'referral/accrual', new Error(error.message), { date });
   }
   // 만료 세션 정리 (#1 보완 — admin_sessions 비대·유효토큰 누적 방지)
   await sb.from('admin_sessions').delete().lt('expires_at', new Date().toISOString());

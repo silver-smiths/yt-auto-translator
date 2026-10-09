@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { getSupabase } from '../lib/supabase.js';
+import { notifyError } from '../lib/errors.js';
 
 const app = new Hono();
 
@@ -49,7 +50,7 @@ app.post('/session', async (c) => {
     .insert({ token, user_id: userId, email, is_admin: isAdmin, expires_at: expiresAt });
 
   if (error) {
-    console.error('[auth] 세션 발급 실패:', error.message);
+    await notifyError(c.env, 'auth/session-insert', new Error(error.message));
     return c.json({ error: 'SERVER_ERROR' }, 500);
   }
 

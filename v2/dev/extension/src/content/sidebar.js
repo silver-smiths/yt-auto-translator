@@ -1,4 +1,5 @@
 import { MSG, PAYMENT_URL, TARGET_LANGUAGES } from '../lib/constants.js';
+import { t } from '../lib/i18n.js';
 import { loadSettings } from '../lib/storage.js';
 
 // ── 인라인 CSS (Shadow DOM 내부) ──────────────────────────────────────────────
@@ -275,6 +276,16 @@ const CSS = `
 .hist-lang.more { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.55); }
 .hist-credit { font-size: 11px; color: rgba(255,255,255,0.6); }
 
+/* 처리 이력 접기/펼치기 (기본 접힘, 헤더 클릭 시 펼침) */
+.hist-head { cursor: pointer; }
+.hist-title-row { display: flex; align-items: flex-start; gap: 5px; }
+.hist-caret { font-size: 9px; color: rgba(255,255,255,0.4); margin-top: 7px; flex-shrink: 0; }
+.hist-title-row .hist-title { margin: 5px 0; flex: 1; min-width: 0; }
+.log-card.collapsed .hist-title { -webkit-line-clamp: 1; }        /* 접힘: 제목 1줄 */
+.log-card:not(.collapsed) .hist-title { -webkit-line-clamp: unset; overflow: visible; }
+.log-card.collapsed .hist-body { display: none; }
+.hist-body { margin-top: 3px; }
+
 .hist-empty {
   font-size: 12px; color: rgba(255,255,255,0.4);
   text-align: center; padding: 20px 10px;
@@ -289,7 +300,11 @@ const CSS = `
 .s-footer {
   padding: 8px 14px;
   border-top: 1px solid rgba(255,255,255,0.08);
-  display: flex; justify-content: center; flex-shrink: 0;
+  display: flex; flex-direction: column; align-items: center; gap: 8px; flex-shrink: 0;
+}
+.s-disclaimer {
+  font-size: 10px; line-height: 1.45; text-align: center;
+  color: rgba(255,255,255,0.4);
 }
 .btn-settings {
   background: none; border: 1px solid rgba(255,255,255,0.1);
@@ -454,7 +469,7 @@ function buildSidebarHTML() {
         <img class="s-logo" src="${logoUrl}" alt="YTAT"
           onerror="this.style.display='none';this.nextElementSibling.style.display=''">
         <span class="s-logo-fallback" style="display:none">T</span>
-        <span class="s-title">YouTube 번역 AI</span>
+        <span class="s-title">${t('sidebarTitle')}</span>
       </div>
       <button class="s-close" id="btn-close">&times;</button>
     </div>
@@ -462,23 +477,24 @@ function buildSidebarHTML() {
     <div class="s-mode-strip" id="mode-strip">
       <div class="strip-left">
         <div class="strip-dot"></div>
-        <span class="strip-label" id="strip-label">번역 방식</span>
-        <span class="strip-value" id="strip-value">내 API 키</span>
+        <span class="strip-label" id="strip-label"></span>
+        <span class="strip-value" id="strip-value"></span>
       </div>
-      <button class="strip-btn" id="btn-topup" style="display:none">충전</button>
+      <button class="strip-btn" id="btn-topup" style="display:none">${t('sbTopup')}</button>
     </div>
 
     <div class="s-remote-banner" id="remote-banner" style="display:none"></div>
 
     <div class="s-control">
-      <button class="btn-start" id="btn-translate">▶&nbsp; 번역 시작</button>
+      <button class="btn-start" id="btn-translate">${t('sbStart')}</button>
+      <button class="btn-start" id="btn-login" style="display:none">${t('sbLogin')}</button>
     </div>
 
     <div class="s-progress" id="progress-section" style="display:none">
       <div class="s-progress-info">
         <span class="s-progress-label">
           <span class="spinner" id="progress-spinner" style="display:none"></span>
-          <span id="progress-label">번역 진행률</span>
+          <span id="progress-label">${t('sidebarProgressLabel')}</span>
         </span>
         <span id="progress-pct">0%</span>
       </div>
@@ -489,7 +505,7 @@ function buildSidebarHTML() {
 
     <div class="s-section s-notice-section" id="notice-section" style="display:none">
       <div class="s-section-head">
-        <span>📢 공지</span>
+        <span>${t('sbNotice')}</span>
         <span class="s-section-badge" id="notice-unread" style="display:none"></span>
       </div>
       <div class="s-section-body" id="notice-feed"></div>
@@ -497,14 +513,15 @@ function buildSidebarHTML() {
 
     <div class="s-section s-hist-section">
       <div class="s-section-head">
-        <span>📋 처리 기록</span>
-        <button class="s-section-btn" id="btn-clear-hist" style="display:none">🗑 지우기</button>
+        <span>${t('sbHistory')}</span>
+        <button class="s-section-btn" id="btn-clear-hist" style="display:none">${t('sbClear')}</button>
       </div>
       <div class="s-section-body" id="log-feed"></div>
     </div>
 
     <div class="s-footer">
-      <button class="btn-settings" id="btn-settings">⚙️ 설정</button>
+      <div class="s-disclaimer">${t('sbDisclaimer')}</div>
+      <button class="btn-settings" id="btn-settings">${t('sbSettings')}</button>
     </div>
 
     <div class="credit-info-panel" id="credit-info-panel" style="display:none">
@@ -545,6 +562,16 @@ function buildSidebarHTML() {
   `;
 }
 
+// 확장 컨텍스트가 살아있을 때만 SW로 전송. 리로드 후 새로고침 안 한 탭에서
+// sendMessage가 "Extension context invalidated"를 uncaught로 던지는 것을 방지.
+function sendToSW(msg) {
+  if (!chrome.runtime?.id) {
+    addLog('error', 'ERROR', '확장이 업데이트되었습니다. 페이지를 새로고침(F5) 후 다시 시도해 주세요.');
+    return;
+  }
+  try { chrome.runtime.sendMessage(msg); } catch { /* 컨텍스트 무효 — 무시 */ }
+}
+
 // ── 이벤트 바인딩 ─────────────────────────────────────────────────────────────
 function bindSidebarEvents(sidebar) {
   sidebar.querySelector('#btn-close').addEventListener('click', collapse);
@@ -554,7 +581,7 @@ function bindSidebarEvents(sidebar) {
       // 중지 즉시 피드백 — 현재 배치가 끝날 때까지 걸릴 수 있으므로 버튼을 잠그고 안내
       const btn = e.currentTarget;
       btn.disabled = true;
-      btn.innerHTML = '■&nbsp; 중지 중...';
+      btn.innerHTML = t('sbStopping');
       const label = shadow.getElementById('progress-label');
       if (label) label.textContent = '현재 작업을 마무리한 뒤 중지됩니다...';
       chrome.runtime.sendMessage({ type: MSG.STOP_TRANSLATION }, () => {
@@ -562,7 +589,7 @@ function bindSidebarEvents(sidebar) {
         if (chrome.runtime.lastError) {
           btn.disabled = false;
           btn.className = 'btn-stop';
-          btn.innerHTML = '■&nbsp; 번역 중지';
+          btn.innerHTML = t('sbStop');
           addLog('error', 'ERROR', '확장이 업데이트된 것 같습니다. 페이지를 새로고침 후 다시 시도해 주세요.');
         }
       });
@@ -572,11 +599,34 @@ function bindSidebarEvents(sidebar) {
   });
 
   sidebar.querySelector('#btn-topup').addEventListener('click', () => {
-    chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: PAYMENT_URL });
+    sendToSW({ type: 'OPEN_TAB', url: PAYMENT_URL });
+  });
+
+  // 명시적 로그인 — 대화형 조회로 Google 로그인창을 띄우고, 성공하면 잔액·버튼 상태 갱신
+  sidebar.querySelector('#btn-login').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const orig = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '로그인 중...';
+    let res;
+    try {
+      res = await chrome.runtime.sendMessage({ type: 'GET_CREDITS', interactive: true });
+    } catch (err) {
+      res = { error: err?.message || 'error' };
+    }
+    btn.disabled = false;
+    btn.innerHTML = orig;
+    if (res && !res.error && res.balance != null) {
+      creditAuthNeeded = false;
+      creditBalance = res.balance;
+      updateModeStrip(); // 로그인 버튼 숨김 → '번역 시작' 노출
+    } else {
+      addLog('error', 'ERROR', '로그인에 실패했습니다. 잠시 후 다시 시도해 주세요.');
+    }
   });
 
   sidebar.querySelector('#btn-settings').addEventListener('click', () => {
-    chrome.runtime.sendMessage({ type: 'OPEN_OPTIONS' });
+    sendToSW({ type: 'OPEN_OPTIONS' });
   });
 
   sidebar.querySelector('#btn-clear-hist').addEventListener('click', () => {
@@ -588,7 +638,7 @@ function bindSidebarEvents(sidebar) {
   });
 
   sidebar.querySelector('#btn-cip-topup').addEventListener('click', () => {
-    chrome.runtime.sendMessage({ type: 'OPEN_TAB', url: PAYMENT_URL });
+    sendToSW({ type: 'OPEN_TAB', url: PAYMENT_URL });
   });
 }
 
@@ -628,23 +678,27 @@ function updateModeStrip() {
   const value    = shadow.getElementById('strip-value');
   const btnTopup = shadow.getElementById('btn-topup');
   const btnTrans = shadow.getElementById('btn-translate');
+  const btnLogin = shadow.getElementById('btn-login');
 
   const balance = creditBalance ?? 0;
   const isLow = balance < 500; // 긴 영상 1언어(약 500 크레딧)도 애매한 수준이면 충전 유도
 
-  // 미로그인: 팝업 없이 안내만 — 실제 로그인은 [번역 시작] 시 진행
+  // 미로그인: '번역 시작' 대신 명시적 '로그인' 버튼을 노출 (설정 화면과 동일한 흐름)
   if (creditAuthNeeded && creditBalance == null) {
     strip.className = 's-mode-strip credits';
-    label.textContent = '로그인 필요';
-    value.textContent = '번역 시작 시 로그인';
+    label.textContent = t('sbLoginNeeded');
+    value.textContent = t('sbLoginFirst');
     btnTopup.style.display = 'none';
-    btnTrans.disabled = serviceDisabled;
+    btnTrans.style.display = 'none';
+    btnLogin.style.display = 'block';
     return;
   }
 
   strip.className = `s-mode-strip credits${isLow ? ' low' : ''}`;
-  label.textContent = isLow ? '크레딧 부족' : '크레딧';
-  value.textContent = creditBalance != null ? formatCredits(balance) : '로딩 중...';
+  label.textContent = isLow ? t('sbLowCredit') : t('sbCredit');
+  value.textContent = creditBalance != null ? formatCredits(balance) : t('sbLoading');
+  btnLogin.style.display = 'none';
+  btnTrans.style.display = 'block';
   btnTopup.style.display = paymentDisabled ? 'none' : 'block';
   // 원격 스위치로 서비스 중단 시에만 잠금. 평소엔 잠그지 않음
   // (저장된 번역 재업로드는 크레딧 없이 가능하고, 실제 부족 여부는 시작 시 SW가 판단)
@@ -679,9 +733,9 @@ async function loadCreditBalance() {
 
 // ── 공지 (사이드바 상단 영역에 목록 표시, 클릭 시 본문 펼침 / 지난 공지 아카이브는 설정) ──
 const NOTICE_META = {
-  info:     { cls: 'info',     label: '📢 공지' },
-  warn:     { cls: 'warn',     label: '⚠️ 안내' },
-  critical: { cls: 'critical', label: '🚨 중요' },
+  info:     { cls: 'info',     label: t('sbNoticeInfo') },
+  warn:     { cls: 'warn',     label: t('sbNoticeWarn') },
+  critical: { cls: 'critical', label: t('sbNoticeCrit') },
 };
 let readIdsSet = null;                    // 읽음 ID 메모리 캐시 (쓰기 경합 방지 — 항상 전체 셋 기록)
 const noticeBodyCache = new Map();        // 공지 본문 캐시 (재펼침 시 재조회 방지)
@@ -864,8 +918,19 @@ function escapeHtml(s) {
 
 // 원화 크레딧 표기 (정수, 천단위 콤마)
 function formatCredits(n) {
-  return `${Math.round(n || 0).toLocaleString('ko-KR')} 크레딧`;
+  return `${Math.round(n || 0).toLocaleString()} ${t('creditsUnit')}`;
 }
+
+// 서비스워커가 기록에 넣은 한국어 값(고정 집합)을 UI 언어로 매핑 — 기록 카드용
+const HC_REASON_KEY = {
+  '크레딧 부족': 'failCredit', 'YouTube 일일 사용량 한도 소진': 'failQuota',
+  '이미 등록된 자막 있음': 'failDup', '로그인 만료': 'failAuth', '채널 권한 오류': 'failPerm',
+  '영상을 찾을 수 없음': 'failNotFound', '네트워크 오류': 'failNetwork', '일시적 오류': 'failTemp',
+};
+const HC_TTYPE_KEY = { '자막': 'metaSub', '제목': 'metaTitleWord', '설명': 'metaDescWord' };
+function hcReason(s) { return HC_REASON_KEY[s] ? t(HC_REASON_KEY[s]) : s; }
+function hcTType(s)  { return HC_TTYPE_KEY[s]  ? t(HC_TTYPE_KEY[s])  : s; }
+function hcFailName(s) { return s === '제목/설명' ? `${t('metaTitleWord')}/${t('metaDescWord')}` : s; }
 
 // (이력 저장은 서비스워커가 담당 — 탭이 닫혀도 유지되도록. 사이드바는 로드/표시만.)
 
@@ -894,7 +959,7 @@ function showEmptyHistory() {
   const el = document.createElement('div');
   el.className = 'hist-empty';
   el.id = 'hist-empty';
-  el.textContent = '아직 처리 기록이 없습니다.';
+  el.textContent = t('sbHistEmpty');
   feed.appendChild(el);
 }
 
@@ -916,11 +981,11 @@ function buildHistoryCard(rec) {
     month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
   });
 
-  const headLabel = isErr ? '❌ 실패'
-    : rec.stopped ? '⏹ 중지됨'
-    : rec.allSkipped ? '💡 건너뜀'
-    : (rec.failCount > 0 || rec.metaError) ? '⚠️ 일부 실패'
-    : '✅ 완료';
+  const headLabel = isErr ? t('hcFail')
+    : rec.stopped ? t('hcStopped')
+    : rec.allSkipped ? t('hcSkipped')
+    : (rec.failCount > 0 || rec.metaError) ? t('hcPartial')
+    : t('hcDone');
   const headColor = isErr ? '#CF6679'
     : rec.stopped ? '#9E9E9E'
     : (rec.failCount > 0 || rec.metaError) ? '#CF6679'
@@ -934,7 +999,30 @@ function buildHistoryCard(rec) {
   if (isErr) {
     lines.push(`<div class="hist-meta" style="color:#ff8a9b">${escapeHtml(rec.errorText)}</div>`);
   } else if (rec.allSkipped) {
-    lines.push('<div class="hist-meta">선택한 언어가 이미 모두 번역되어 있었습니다.</div>');
+    lines.push(`<div class="hist-meta">${t('hcAllSkipped')}</div>`);
+  } else if (rec.subResult || rec.targetTypes) {
+    // ── 새 구조화 포맷 (번역 대상 / 언어 / 결과 / 실패 대상 / 실패 사유) ──
+    const r = rec.subResult;
+    if (rec.targetTypes?.length)
+      lines.push(`<div class="hist-meta">${t('hcTargets')} · ${escapeHtml(rec.targetTypes.map(hcTType).join(' · '))}</div>`);
+    if (rec.langNames?.length)
+      lines.push(`<div class="hist-meta">${t('hcLangs')} · ${escapeHtml(rec.langNames.join(', '))}</div>`);
+    if (r) {
+      const parts = [`${t('hcOk')} ${r.ok}`];
+      if (r.skip) parts.push(`${t('hcSkip')} ${r.skip}`);
+      if (r.fail) parts.push(`${t('hcFailN')} ${r.fail}`);
+      lines.push(`<div class="hist-meta">${t('hcResult')} · ${parts.join(' · ')} / ${t('hcSelected')} ${r.selected}</div>`);
+    }
+    if (rec.metaTitle || rec.metaDesc) {
+      const tt = [rec.metaTitle && t('metaTitleWord'), rec.metaDesc && t('metaDescWord')].filter(Boolean).join('·');
+      lines.push(`<div class="hist-meta">🌐 ${tt} ${t('hcMetaRegistered')}</div>`);
+    }
+    if (rec.failNames?.length)
+      lines.push(`<div class="hist-meta" style="color:#ff8a9b">${t('hcFailTarget')} · ${escapeHtml(rec.failNames.map(hcFailName).join(', '))}</div>`);
+    if (rec.failReasons?.length)
+      lines.push(`<div class="hist-meta" style="color:#ff8a9b">${t('hcFailReason')} · ${escapeHtml(rec.failReasons.map(hcReason).join(', '))}</div>`);
+    if (!lines.length)
+      lines.push(`<div class="hist-meta">${t('hcNothing')}</div>`);
   } else {
     // 자막 번역 결과
     if (items.length) {
@@ -973,27 +1061,34 @@ function buildHistoryCard(rec) {
   }
 
   const creditLine = (rec.creditsUsed != null)
-    ? `<div class="hist-credit">💰 ${formatCredits(rec.creditsUsed)} 차감${rec.creditsRemaining != null ? ` · 잔액 ${formatCredits(rec.creditsRemaining)}` : ''}</div>`
+    ? `<div class="hist-credit">💰 ${formatCredits(rec.creditsUsed)} ${t('hcCharged')}${rec.creditsRemaining != null ? ` · ${t('hcRemaining')} ${formatCredits(rec.creditsRemaining)}` : ''}</div>`
     : '';
 
   const fullTitle = rec.videoTitle || rec.videoId || '영상';
+  card.classList.add('collapsed'); // 기본 접힘 — 헤더 클릭 시 상세 펼침
   card.innerHTML = `
-    <div class="log-top">
-      <span class="log-type" style="color:${headColor}">${headLabel}</span>
-      <span class="log-time">${time}</span>
+    <div class="hist-head">
+      <div class="log-top">
+        <span class="log-type" style="color:${headColor}">${headLabel}</span>
+        <span class="log-time">${time}</span>
+      </div>
+      <div class="hist-title-row">
+        <span class="hist-caret">▸</span>
+        <span class="hist-title" title="${escapeHtml(fullTitle)}">📹 ${escapeHtml(fullTitle)}</span>
+      </div>
     </div>
-    <div class="hist-title" title="${escapeHtml(fullTitle)}">📹 ${escapeHtml(fullTitle)}</div>
-    ${lines.join('')}
-    ${creditLine}
+    <div class="hist-body">
+      ${lines.join('')}
+      ${creditLine}
+    </div>
   `;
 
-  // 제목 클릭 → 2줄 ↔ 전체 펼침 토글 (잘린 경우에만 커서/토글 활성)
-  const titleEl = card.querySelector('.hist-title');
-  requestAnimationFrame(() => {
-    if (titleEl.scrollHeight > titleEl.clientHeight + 1) {
-      titleEl.classList.add('clamped');
-      titleEl.addEventListener('click', () => titleEl.classList.toggle('expanded'));
-    }
+  // 헤더 클릭 → 상세 접기/펼치기
+  const head  = card.querySelector('.hist-head');
+  const caret = card.querySelector('.hist-caret');
+  head.addEventListener('click', () => {
+    const collapsed = card.classList.toggle('collapsed');
+    caret.textContent = collapsed ? '▸' : '▾';
   });
 
   return card;

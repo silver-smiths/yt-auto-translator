@@ -1,15 +1,46 @@
 import { Hono } from 'hono';
 import { getSupabase } from '../lib/supabase.js';
 import { KRW_TO_USD_RATE } from '../lib/constants.js';
+import { verifyPaypalWebhook, grantPaypalOrder } from '../lib/paypal.js';
+import { notifyError, tgEscape } from '../lib/errors.js';
 
 const app = new Hono();
+
+// ── PayPal 결제 완료 웹훅 (보조 확인 — 주 지급은 /credits/paypal/capture) ──
+app.post('/paypal', async (c) => {
+  const bodyText = await c.req.text();
+  const headers = {
+    'paypal-auth-algo':         c.req.header('paypal-auth-algo'),
+    'paypal-cert-url':          c.req.header('paypal-cert-url'),
+    'paypal-transmission-id':   c.req.header('paypal-transmission-id'),
+    'paypal-transmission-sig':  c.req.header('paypal-transmission-sig'),
+    'paypal-transmission-time': c.req.header('paypal-transmission-time'),
+  };
+
+  const ok = await verifyPaypalWebhook(c.env, headers, bodyText);
+  if (!ok) return c.json({ error: 'INVALID_SIGNATURE' }, 401);
+
+  let event;
+  try { event = JSON.parse(bodyText); } catch { return c.json({ ok: true }); }
+
+  if (event.event_type === 'PAYMENT.CAPTURE.COMPLETED') {
+    // capture webhook의 resource에서 원 order id 추출 (우리 pending 결제 키)
+    const orderId = event.resource?.supplementary_data?.related_ids?.order_id;
+    if (orderId) {
+      try { await grantPaypalOrder(c.env, orderId); }
+      catch (e) { await notifyError(c.env, 'webhook/paypal-grant', e, { orderId }); return c.json({ error: 'GRANT_FAILED' }, 500); } // 재전송 유도
+    }
+  }
+  // 환불(PAYMENT.CAPTURE.REFUNDED) 등은 추후 보강
+  return c.json({ ok: true });
+});
 
 // ── Portone 결제 완료 웹훅 ───────────────────────────────
 app.post('/portone', async (c) => {
   // 웹훅 시크릿 검증 (Portone V1은 URL ?secret= 방식만 지원)
   const expectedSecret = c.env.PORTONE_WEBHOOK_SECRET;
   if (!expectedSecret) {
-    console.error('[webhook] PORTONE_WEBHOOK_SECRET 미설정');
+    await notifyError(c.env, 'webhook/portone-config', new Error('PORTONE_WEBHOOK_SECRET 미설정'));
     return c.json({ error: 'SERVER_MISCONFIGURED' }, 500);
   }
   const receivedSecret = c.req.query('secret');
@@ -24,14 +55,14 @@ app.post('/portone', async (c) => {
   if (status === 'cancelled') {
     const token = await getPortoneToken(c.env);
     if (!token) {
-      console.error('[webhook] Portone 토큰 발급 실패 (취소 처리)');
+      await notifyError(c.env, 'webhook/portone-token(cancel)', new Error('Portone 토큰 발급 실패'));
       return c.json({ error: 'PORTONE_AUTH_FAILED' }, 502);
     }
     const vr = await fetch(`https://api.iamport.kr/payments/${imp_uid}`, {
       headers: { Authorization: `Bearer ${token}` }
     });
     if (!vr.ok) {
-      console.error(`[webhook] Portone 취소 조회 실패: ${vr.status}`);
+      await notifyError(c.env, 'webhook/portone-cancel-verify', new Error(`Portone 취소 조회 실패: ${vr.status}`), { imp_uid });
       return c.json({ error: 'PORTONE_VERIFY_FAILED' }, 502);
     }
     const vd = await vr.json();
@@ -58,7 +89,7 @@ app.post('/portone', async (c) => {
     });
 
     if (refundError) {
-      console.error('[webhook] refund_credits 실패:', refundError.message, { payment_id: payment.id });
+      await notifyError(c.env, 'webhook/refund_credits', new Error(refundError.message), { payment_id: payment.id });
       return c.json({ error: 'REFUND_FAILED' }, 500); // Portone 재전송으로 재시도
     }
 
@@ -66,7 +97,7 @@ app.post('/portone', async (c) => {
     await sendTelegram(c.env, c.env.TELEGRAM_PAYMENT_THREAD_ID,
       `💸 *[YTAT] 결제 취소*\n\n` +
       `💰 환불: *${reclaimCredits.toLocaleString('ko-KR')} 크레딧* 회수\n` +
-      `🪪 user\\_id: \`${payment.user_id}\`\n` +
+      `🪪 user\\_id: \`${tgEscape(payment.user_id)}\`\n` +
       `🕐 ${time}`
     ).catch(err => console.error('[webhook] 텔레그램 알림 실패:', err.message));
 
@@ -80,7 +111,7 @@ app.post('/portone', async (c) => {
   // Portone API로 결제 검증 (위조 방지)
   const portoneToken = await getPortoneToken(c.env);
   if (!portoneToken) {
-    console.error('[webhook] Portone 토큰 발급 실패');
+    await notifyError(c.env, 'webhook/portone-token', new Error('Portone 토큰 발급 실패'));
     return c.json({ error: 'PORTONE_AUTH_FAILED' }, 502);
   }
 
@@ -88,7 +119,7 @@ app.post('/portone', async (c) => {
     headers: { Authorization: `Bearer ${portoneToken}` }
   });
   if (!verifyRes.ok) {
-    console.error(`[webhook] Portone 결제 조회 실패: ${verifyRes.status}`);
+    await notifyError(c.env, 'webhook/portone-verify', new Error(`Portone 결제 조회 실패: ${verifyRes.status}`), { imp_uid });
     return c.json({ error: 'PORTONE_VERIFY_FAILED' }, 502);
   }
   const verifyData = await verifyRes.json();
@@ -129,7 +160,7 @@ app.post('/portone', async (c) => {
   });
 
   if (grantError) {
-    console.error('[webhook] grant_credits 실패:', grantError.message, { payment_id: payment.id });
+    await notifyError(c.env, 'webhook/grant_credits', new Error(grantError.message), { payment_id: payment.id });
     // payments는 여전히 pending → Portone 웹훅 재전송 시 재시도 가능
     return c.json({ error: 'GRANT_FAILED' }, 500);
   }
@@ -149,7 +180,7 @@ app.post('/portone', async (c) => {
   await sendTelegram(c.env, c.env.TELEGRAM_PAYMENT_THREAD_ID,
     `🎉 *[YTAT] 결제 완료!*\n\n` +
     `💰 금액: ${amountDisplay} → *${amountCredits.toLocaleString('ko-KR')} 크레딧*\n` +
-    `🪪 user\\_id: \`${payment.user_id}\`\n` +
+    `🪪 user\\_id: \`${tgEscape(payment.user_id)}\`\n` +
     `🕐 ${time}`
   ).catch(err => console.error('[webhook] 텔레그램 알림 실패:', err.message)); // 알림 실패가 결제 응답에 영향주면 안 됨
 
